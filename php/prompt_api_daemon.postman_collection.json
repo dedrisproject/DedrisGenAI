@@ -1,0 +1,59 @@
+{
+  "info": {
+    "_postman_id": "6d6b1f55-1b0d-4f47-996f-48c17fc5793e",
+    "name": "PHP Prompt API Daemon",
+    "description": "Quick-start requests for interacting with the PHP Prompt API daemon listening on port 9001.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "health"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Execute Prompt",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"prompt\": \"Hello daemon\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/execute",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "execute"
+          ]
+        }
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:9001"
+    }
+  ]
+}
