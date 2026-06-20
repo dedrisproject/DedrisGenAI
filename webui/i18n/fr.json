@@ -106,6 +106,8 @@
   "results.firstrun": "Note du premier lancement : la toute première génération télécharge et charge le modèle et peut prendre plusieurs minutes. Les générations suivantes sont bien plus rapides.",
   "results.elapsed": "Écoulé",
   "results.done": "Terminé — {count} image(s)",
+  "results.title": "Résultats",
+  "results.clear": "Effacer",
   "progress.waiting": "En attente…",
   "progress.submitting": "Envoi…",
   "progress.queued": "En file d'attente…",

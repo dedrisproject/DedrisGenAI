@@ -106,6 +106,8 @@
   "results.firstrun": "First run note: the very first generation downloads and loads the model and may take several minutes. Later generations are much faster.",
   "results.elapsed": "Elapsed",
   "results.done": "Done — {count} image(s)",
+  "results.title": "Results",
+  "results.clear": "Clear",
   "progress.waiting": "Waiting…",
   "progress.submitting": "Submitting…",
   "progress.queued": "Queued…",

@@ -232,19 +232,23 @@ foreach (Lang::SUPPORTED as $code) {
         </div>
       </div>
 
+      <!-- Performance (collapsed by default) -->
+      <div class="card">
+        <details class="collapsible" id="performance-section">
+          <summary data-i18n="field.performance"><?= htmlspecialchars($t('field.performance', 'Performance'), ENT_QUOTES) ?></summary>
+          <div class="card-body">
+            <div class="seg" id="performance" role="radiogroup" data-i18n-aria-label="field.performance" aria-label="<?= htmlspecialchars($t('field.performance', 'Performance'), ENT_QUOTES) ?>"></div>
+          </div>
+        </details>
+      </div>
+
       <!-- Setting basics -->
       <div class="card">
         <div class="card-body">
-          <div class="row cols-2">
-            <div>
-              <span class="field-label"><span data-i18n="field.performance"><?= htmlspecialchars($t('field.performance', 'Performance'), ENT_QUOTES) ?></span></span>
-              <div class="seg" id="performance" role="radiogroup" data-i18n-aria-label="field.performance" aria-label="<?= htmlspecialchars($t('field.performance', 'Performance'), ENT_QUOTES) ?>"></div>
-            </div>
-            <div class="adv-only">
-              <label class="field"><span class="lbl" data-i18n="field.output_format"><?= htmlspecialchars($t('field.output_format', 'Output format'), ENT_QUOTES) ?></span>
-                <select id="output_format"></select>
-              </label>
-            </div>
+          <div class="adv-only">
+            <label class="field"><span class="lbl" data-i18n="field.output_format"><?= htmlspecialchars($t('field.output_format', 'Output format'), ENT_QUOTES) ?></span>
+              <select id="output_format"></select>
+            </label>
           </div>
 
           <div style="margin-top:4px">
@@ -368,7 +372,14 @@ foreach (Lang::SUPPORTED as $code) {
             <img id="preview-img" class="hidden" data-i18n-alt="results.preview.alt" alt="<?= htmlspecialchars($t('results.preview.alt', 'Live preview'), ENT_QUOTES) ?>">
           </div>
 
-          <div class="gallery" id="gallery"></div>
+          <div class="results-feed-head" id="results-feed-head" hidden>
+            <span class="results-feed-title">
+              <span data-i18n="results.title"><?= htmlspecialchars($t('results.title', 'Results'), ENT_QUOTES) ?></span>
+              <span class="results-feed-count">(<span id="results-count">0</span>)</span>
+            </span>
+            <button type="button" class="btn ghost sm" id="results-clear" data-i18n="results.clear"><?= htmlspecialchars($t('results.clear', 'Clear'), ENT_QUOTES) ?></button>
+          </div>
+          <div class="gallery results-feed" id="results-feed"></div>
         </div>
       </div>
     </aside>

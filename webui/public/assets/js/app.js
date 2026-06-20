@@ -71,6 +71,9 @@
   const LS_LANG = 'dedris.lang';
   const LS_MODE = 'dedris.mode';
   const LS_TASK = 'dedris.task';   // in-flight task id, so a page refresh can reconnect
+  const LS_RESULTS = 'dedris.results'; // accumulated result URLs, survive a refresh
+  const LS_PERF = 'dedris.perf_open'; // Performance collapsible open/closed state
+  const RESULTS_CAP = 200;         // cap the persisted/in-memory feed length
 
   const i18n = {
     lang: DEFAULT_LANG,
@@ -138,6 +141,8 @@
   function refreshDynamicI18n() {
     // styles grid (placeholders carry translated alt/title)
     renderStyles($('#style-search') ? $('#style-search').value : '');
+    // results feed (image alt text is localized)
+    if (typeof renderFeed === 'function') renderFeed();
     // generate button label reflects current generating state
     setGenLabel();
     // engine pill + selected-state messages, if idle
@@ -173,6 +178,20 @@
     });
   }
 
+  // ============================================================== Performance collapsible
+  // Collapsed on first load; remembers the user's choice across visits. Works in
+  // both Simple and Advanced modes (the section lives outside any adv-only block).
+  function initPerformanceSection() {
+    const sec = $('#performance-section');
+    if (!sec) return;
+    let open = false;
+    try { open = localStorage.getItem(LS_PERF) === '1'; } catch (_) {}
+    sec.open = open;
+    sec.addEventListener('toggle', () => {
+      try { localStorage.setItem(LS_PERF, sec.open ? '1' : '0'); } catch (_) {}
+    });
+  }
+
   // ---------------------------------------------------------------- fallbacks
   // Used only if /api/options is unreachable, so the UI is never empty.
   const FALLBACK = {
@@ -194,6 +213,8 @@
     options: null,
     styles: [],            // [{name, preview}]
     selectedStyles: new Set(),
+    results: [],           // ordered list of result image URLs (persistent feed, newest first on render)
+    resultsSet: new Set(), // dedupe guard for state.results
     activePreset: 'Standard',
     activeTab: 'text',
     taskId: null,
@@ -520,7 +541,9 @@
   const elFirstRun = $('#firstrun-note');
   const elPreviewImg = $('#preview-img');
   const elPreviewPh = $('#preview-placeholder');
-  const elGallery = $('#gallery');
+  const elFeed = $('#results-feed');
+  const elFeedHead = $('#results-feed-head');
+  const elResultsCount = $('#results-count');
 
   function setGenLabel() {
     const txt = $('.txt', elGen);
@@ -657,15 +680,75 @@
     elPreviewImg.classList.remove('hidden');
     elPreviewPh.classList.add('hidden');
   }
-  function renderGallery(images) {
-    elGallery.innerHTML = '';
+  // ---------------------------------------------------------------- accumulating results feed
+  /** Persist the feed URLs (capped) so a refresh keeps showing them. */
+  function saveResults() {
+    try { localStorage.setItem(LS_RESULTS, JSON.stringify(state.results.slice(0, RESULTS_CAP))); } catch (_) {}
+  }
+  /** Load any previously persisted feed URLs into memory. */
+  function loadResults() {
+    let saved = null;
+    try { saved = localStorage.getItem(LS_RESULTS); } catch (_) {}
+    if (!saved) return;
+    let arr = [];
+    try { arr = JSON.parse(saved); } catch (_) { arr = []; }
+    if (!Array.isArray(arr)) arr = [];
+    state.results = [];
+    state.resultsSet = new Set();
+    arr.forEach((u) => {
+      if (typeof u === 'string' && u && !state.resultsSet.has(u)) {
+        state.resultsSet.add(u);
+        state.results.push(u);
+      }
+    });
+  }
+
+  /**
+   * Merge a batch of images into the persistent feed (dedupe by URL, keep
+   * insertion order). Returns true if anything new was added. The feed is the
+   * accumulating history; it is never wiped when a new generation starts.
+   */
+  function addResults(images) {
+    let added = false;
     (images || []).forEach((img) => {
       const url = outputUrl(img);
-      const a = el('a', { href: '#', onclick: (e) => { e.preventDefault(); openLightbox(url); } },
-        el('img', { src: url, alt: 'Generated image', loading: 'lazy' }));
-      elGallery.append(a);
+      if (!url || state.resultsSet.has(url)) return;
+      state.resultsSet.add(url);
+      state.results.push(url);
+      added = true;
     });
-    if (images && images.length) setPreview(outputUrl(images[0]));
+    if (added) {
+      if (state.results.length > RESULTS_CAP) {
+        const drop = state.results.splice(0, state.results.length - RESULTS_CAP);
+        drop.forEach((u) => state.resultsSet.delete(u));
+      }
+      renderFeed();
+      saveResults();
+    }
+    return added;
+  }
+
+  /** Render the whole feed, newest first. */
+  function renderFeed() {
+    elFeed.innerHTML = '';
+    // newest first
+    for (let i = state.results.length - 1; i >= 0; i--) {
+      const url = state.results[i];
+      const a = el('a', { href: '#', onclick: (e) => { e.preventDefault(); openLightbox(url); } },
+        el('img', { src: url, alt: t('results.preview.alt'), loading: 'lazy' }));
+      elFeed.append(a);
+    }
+    const n = state.results.length;
+    if (elResultsCount) elResultsCount.textContent = String(n);
+    if (elFeedHead) elFeedHead.hidden = (n === 0);
+  }
+
+  /** Empty the feed and its persisted copy. */
+  function clearResults() {
+    state.results = [];
+    state.resultsSet = new Set();
+    renderFeed();
+    try { localStorage.removeItem(LS_RESULTS); } catch (_) {}
   }
 
   async function onGenerate() {
@@ -675,7 +758,7 @@
     setIndeterminate(true);                 // start animated immediately
     setProgress(0, 'progress.submitting', true);
     setIndeterminate(true);
-    elGallery.innerHTML = '';
+    // NOTE: do NOT clear the feed — results accumulate across generations.
     try {
       const params = gatherParams();
       const res = await apiPost('generate', params);
@@ -714,9 +797,17 @@
       renderProgress(data);
       if (data.preview) setPreview(data.preview);
 
+      // Progressive results: the engine reports images already saved during the
+      // run. Merge them into the accumulating feed so they appear one by one.
+      if (Array.isArray(data.images) && data.images.length) {
+        addResults(data.images);
+        setPreview(outputUrl(data.images[data.images.length - 1]));
+      }
+
       if (st === 'done' || st === 'finished' || st === 'completed') {
         const imgs = data.images || [];
-        renderGallery(imgs);
+        addResults(imgs);
+        if (imgs.length) setPreview(outputUrl(imgs[imgs.length - 1]));
         setProgress(100, 'results.done', true, { count: imgs.length });
         state.firstRunDone = true;
         finishGenerating();
@@ -774,12 +865,18 @@
       hideBanner();
       renderProgress(data);
       if (data.preview) setPreview(data.preview);
+      // Merge any results already produced before the refresh.
+      if (Array.isArray(data.images) && data.images.length) {
+        addResults(data.images);
+        setPreview(outputUrl(data.images[data.images.length - 1]));
+      }
       showBannerKey('info', 'banner.task.resumed', null, true);
       pollProgress();
     } else if (st === 'done' || st === 'finished' || st === 'completed') {
-      // Finished while we were away — show its results.
+      // Finished while we were away — merge its results into the feed.
       const imgs = data.images || [];
-      renderGallery(imgs);
+      addResults(imgs);
+      if (imgs.length) setPreview(outputUrl(imgs[imgs.length - 1]));
       setProgress(100, 'results.done', true, { count: imgs.length });
       try { localStorage.removeItem(LS_TASK); } catch (_) {}
     } else {
@@ -866,6 +963,9 @@
     $('#style-search').addEventListener('input', (e) => renderStyles(e.target.value));
     $('#styles-clear').addEventListener('click', () => setStyles([]));
 
+    const resClear = $('#results-clear');
+    if (resClear) resClear.addEventListener('click', clearResults);
+
     elGen.addEventListener('click', onGenerate);
     elStop.addEventListener('click', onStop);
     elSkip.addEventListener('click', onSkip);
@@ -902,10 +1002,15 @@
     initMode();
     await setLanguage(pickInitialLang(), false);
 
+    initPerformanceSection();
     buildLoraRows();
     bindControls();
     bindTabs();
     bindDropzones();
+
+    // Restore the accumulating results feed from a previous session.
+    loadResults();
+    renderFeed();
 
     // Render fallbacks immediately so the UI is interactive even if engine is slow.
     applyOptions(FALLBACK);

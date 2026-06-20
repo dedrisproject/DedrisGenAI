@@ -774,9 +774,19 @@ def get_progress(task_id):
     elif task.last_stop == "skip":
         message = message or "Skipping ..."
 
+    # Images already saved during this (possibly multi-image) run, so the UI can
+    # show finished images progressively ("man mano") before the whole batch ends.
+    running_images = []
+    try:
+        for r in (getattr(task, "results", []) or []):
+            if isinstance(r, str):
+                running_images.append(_outputs_url_for(r))
+    except Exception:
+        pass
+
     return {"state": state, "progress": progress, "preview": preview,
             "message": message or ("Running ..." if state == "running" else "Waiting for task to start ..."),
-            "images": []}
+            "images": running_images}
 
 
 def stop_task(task_id):

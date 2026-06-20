@@ -106,6 +106,8 @@
   "results.firstrun": "Hinweis zum ersten Start: Die allererste Generierung lädt das Modell herunter und in den Speicher und kann mehrere Minuten dauern. Spätere Generierungen sind viel schneller.",
   "results.elapsed": "Vergangen",
   "results.done": "Fertig — {count} Bild(er)",
+  "results.title": "Ergebnisse",
+  "results.clear": "Leeren",
   "progress.waiting": "Warten…",
   "progress.submitting": "Wird übermittelt…",
   "progress.queued": "In Warteschlange…",

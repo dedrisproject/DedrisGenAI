@@ -106,6 +106,8 @@
   "results.firstrun": "Nota primo avvio: la prima generazione scarica e carica il modello e può richiedere alcuni minuti. Le generazioni successive sono molto più rapide.",
   "results.elapsed": "Tempo trascorso",
   "results.done": "Fatto — {count} immagine/i",
+  "results.title": "Risultati",
+  "results.clear": "Cancella",
   "progress.waiting": "In attesa…",
   "progress.submitting": "Invio in corso…",
   "progress.queued": "In coda…",
