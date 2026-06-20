@@ -22,7 +22,7 @@ final class EngineClient
     /** Total request timeout in seconds (generation kicks off fast; long work is polled). */
     private int $timeout;
 
-    public function __construct(int $connectTimeout = 5, int $timeout = 30)
+    public function __construct(int $connectTimeout = 5, int $timeout = 120)
     {
         $this->connectTimeout = $connectTimeout;
         $this->timeout = $timeout;

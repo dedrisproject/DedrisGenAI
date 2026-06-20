@@ -157,6 +157,35 @@ html.mode-simple .gen-buttons { grid-template-columns: 2fr 1fr; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* model-download bar (preset first-use download) */
+.model-bar {
+  margin: 0;
+  padding: 12px 20px;
+  background: #18233a;
+  color: #cfe0ff;
+  border-bottom: 1px solid #243353;
+  font-size: 14px;
+}
+.model-bar.hidden { display: none !important; }
+.model-bar-row { display: flex; align-items: center; gap: 10px; }
+.model-bar-row .spinner {
+  width: 14px; height: 14px; border-radius: 50%; flex: none;
+  border: 2px solid rgba(255,255,255,.25); border-top-color: #fff;
+  animation: spin .8s linear infinite;
+}
+.model-bar-text { flex: 1; min-width: 0; }
+.model-bar-elapsed { font-family: var(--mono); color: #9fb8e6; flex: none; font-variant-numeric: tabular-nums; }
+.model-bar-elapsed::before { content: "⏱ "; opacity: .7; }
+.model-bar-track {
+  height: 6px; border-radius: 999px; margin-top: 8px;
+  background: rgba(0,0,0,.3); overflow: hidden;
+}
+.model-bar-fill {
+  height: 100%; width: 40%;
+  background: var(--grad);
+  animation: indeterminate 1.25s ease-in-out infinite;
+}
+
 .app {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 420px;
@@ -438,6 +467,36 @@ input[type="range"]::-moz-range-thumb {
 .dropzone .icon { font-size: 28px; opacity: .7; }
 .dropzone img { max-width: 100%; max-height: 260px; border-radius: var(--radius-sm); }
 .note { font-size: 12px; color: var(--text-mute); margin-top: 8px; }
+
+/* ---------- Inpaint mask editor ---------- */
+.inpaint-editor.hidden { display: none !important; }
+.inpaint-canvas-wrap {
+  display: grid; place-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background:
+    linear-gradient(var(--bg-2), var(--bg-2)),
+    repeating-conic-gradient(#0f1320 0% 25%, #11151f 0% 50%) 50% / 22px 22px;
+  overflow: hidden;
+  padding: 8px;
+}
+#inpaint-canvas {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 6px;
+  cursor: crosshair;
+  touch-action: none; /* let us own touch gestures for painting */
+}
+.inpaint-tools {
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px;
+  margin-top: 12px;
+}
+.inpaint-tool-btns { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.inpaint-tool.active {
+  background: var(--grad); border: none; color: #fff;
+  box-shadow: 0 2px 8px rgba(58,160,255,.35);
+}
 .soon-tag {
   display:inline-block; font-size: 10px; font-weight: 700; letter-spacing: .05em;
   text-transform: uppercase; color: var(--warn);

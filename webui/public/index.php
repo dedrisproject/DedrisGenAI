@@ -115,6 +115,16 @@ foreach (Lang::SUPPORTED as $code) {
     <span id="banner-text"></span>
   </div>
 
+  <!-- model-download bar: shown while a preset's model is downloading on first use -->
+  <div class="model-bar hidden" id="model-bar" role="status" aria-live="polite">
+    <div class="model-bar-row">
+      <span class="spinner"></span>
+      <span class="model-bar-text" id="model-bar-text" data-i18n="model.downloading"><?= htmlspecialchars($t('model.downloading', 'Downloading model… (first use of this preset)'), ENT_QUOTES) ?></span>
+      <span class="model-bar-elapsed" id="model-bar-elapsed" title="<?= htmlspecialchars($t('model.elapsed', 'Elapsed'), ENT_QUOTES) ?>" data-i18n-title="model.elapsed">00:00</span>
+    </div>
+    <div class="model-bar-track"><div class="model-bar-fill" id="model-bar-fill"></div></div>
+  </div>
+
   <!-- ======================= APP GRID ======================= -->
   <main class="app">
 
@@ -194,8 +204,34 @@ foreach (Lang::SUPPORTED as $code) {
 
         <!-- Inpaint / Outpaint -->
         <div class="tabpanel" data-panel="inpaint">
-          <div class="dropzone" data-drop="inpaint_image"><div class="icon">🎨</div><div data-i18n="inpaint.drop"><?= htmlspecialchars($t('inpaint.drop', ''), ENT_QUOTES) ?></div></div>
-          <input type="file" accept="image/*" class="hidden" data-file="inpaint_image">
+          <!-- upload / drop zone (hidden once an image is loaded) -->
+          <div class="dropzone" id="inpaint-dropzone"><div class="icon">🎨</div><div data-i18n="inpaint.upload"><?= htmlspecialchars($t('inpaint.upload', 'Drop or click to upload the image to edit'), ENT_QUOTES) ?></div></div>
+          <input type="file" accept="image/*" class="hidden" id="inpaint-file">
+
+          <!-- mask editor: source image on a canvas with a translucent paint overlay -->
+          <div class="inpaint-editor hidden" id="inpaint-editor">
+            <div class="inpaint-canvas-wrap" id="inpaint-canvas-wrap">
+              <canvas id="inpaint-canvas"></canvas>
+            </div>
+            <p class="note" data-i18n="inpaint.canvas_hint"><?= htmlspecialchars($t('inpaint.canvas_hint', ''), ENT_QUOTES) ?></p>
+
+            <div class="inpaint-tools">
+              <label class="field" style="margin:0;flex:1 1 180px">
+                <span class="field-label"><span data-i18n="inpaint.brush_size"><?= htmlspecialchars($t('inpaint.brush_size', 'Brush size'), ENT_QUOTES) ?></span><span class="val" id="inpaint-brush-out">40</span></span>
+                <input type="range" id="inpaint-brush" min="4" max="160" step="2" value="40">
+              </label>
+              <div class="inpaint-tool-btns">
+                <button type="button" class="btn sm inpaint-tool active" id="inpaint-brush-btn" aria-pressed="true" data-i18n="inpaint.brush"><?= htmlspecialchars($t('inpaint.brush', 'Brush'), ENT_QUOTES) ?></button>
+                <button type="button" class="btn sm inpaint-tool" id="inpaint-erase-btn" aria-pressed="false" data-i18n="inpaint.erase"><?= htmlspecialchars($t('inpaint.erase', 'Eraser'), ENT_QUOTES) ?></button>
+                <button type="button" class="btn ghost sm" id="inpaint-clear-btn" data-i18n="inpaint.clear"><?= htmlspecialchars($t('inpaint.clear', 'Clear mask'), ENT_QUOTES) ?></button>
+              </div>
+            </div>
+
+            <label class="field" style="margin-top:12px"><span class="lbl" data-i18n="inpaint.prompt"><?= htmlspecialchars($t('inpaint.prompt', 'Inpaint prompt'), ENT_QUOTES) ?></span>
+              <textarea id="inpaint_prompt" class="neg-area" data-i18n-placeholder="inpaint.prompt.ph" placeholder="<?= htmlspecialchars($t('inpaint.prompt.ph', ''), ENT_QUOTES) ?>"></textarea>
+            </label>
+          </div>
+
           <label class="field" style="margin-top:12px"><span class="lbl" data-i18n="inpaint.mode"><?= htmlspecialchars($t('inpaint.mode', 'Inpaint mode'), ENT_QUOTES) ?></span>
             <select id="inpaint_mode">
               <option data-i18n="inpaint.mode.default"><?= htmlspecialchars($t('inpaint.mode.default', ''), ENT_QUOTES) ?></option>

@@ -351,6 +351,23 @@ def load_preset(label):
 # AsyncTask argument assembly — the fidelity-critical part
 # ---------------------------------------------------------------------------
 
+def _data_url_to_np(data_url, mode="RGB"):
+    """Decode a base64 data URL (or raw base64) into an HxWxC uint8 numpy array.
+    Returns None if absent/invalid. Used for the inpaint image + brushed mask."""
+    if not data_url or not isinstance(data_url, str):
+        return None
+    try:
+        import base64 as _b64
+        from io import BytesIO
+        import numpy as np
+        from PIL import Image
+        raw = data_url.split(",", 1)[1] if data_url.startswith("data:") else data_url
+        img = Image.open(BytesIO(_b64.b64decode(raw))).convert(mode)
+        return np.array(img)
+    except Exception:
+        return None
+
+
 def build_async_task_args(body):
     """Build the EXACT positional ``args`` list ``modules.async_worker.AsyncTask``
     expects, filling everything the API doesn't expose with the same default the
@@ -528,15 +545,38 @@ def build_async_task_args(body):
         args.append(name)
         args.append(weight)
 
-    # image-input controls (API does not feed images yet -> all neutral)
-    args.append(False)              # input_image_checkbox
-    args.append("uov")              # current_tab (tab key; ignored when checkbox False)
-    args.append(config.default_uov_method)  # uov_method
-    args.append(None)               # uov_input_image
-    args.append([])                 # outpaint_selections
-    args.append(None)               # inpaint_input_image
-    args.append("")                 # inpaint_additional_prompt
-    args.append(None)               # inpaint_mask_image_upload
+    # image-input controls. Inpaint: the UI sends the source image + a brushed
+    # mask (white = region to regenerate) as base64 data URLs; we decode them into
+    # the {'image','mask'} dict Fooocus' worker expects and switch to the inpaint tab.
+    inpaint_img = None
+    inpaint_msk = None
+    if str(body.get("input_mode", "")) == "inpaint":
+        inpaint_img = _data_url_to_np(body.get("inpaint_image"), "RGB")
+        if inpaint_img is not None:
+            inpaint_msk = _data_url_to_np(body.get("inpaint_mask"), "RGB")
+    do_inpaint = inpaint_img is not None
+    if do_inpaint:
+        # The worker reads inpaint_input_image['mask'][:, :, 0], so the mask must be a
+        # HxWx3 array matching the image. Synthesize/resize defensively.
+        import numpy as np
+        if inpaint_msk is None:
+            inpaint_msk = np.zeros_like(inpaint_img)
+        elif inpaint_msk.shape[:2] != inpaint_img.shape[:2]:
+            try:
+                from PIL import Image
+                inpaint_msk = np.array(Image.fromarray(inpaint_msk).resize(
+                    (inpaint_img.shape[1], inpaint_img.shape[0])))
+            except Exception:
+                inpaint_msk = np.zeros_like(inpaint_img)
+
+    args.append(bool(do_inpaint))                       # input_image_checkbox
+    args.append("inpaint" if do_inpaint else "uov")     # current_tab
+    args.append(config.default_uov_method)              # uov_method
+    args.append(None)                                   # uov_input_image
+    args.append([])                                     # outpaint_selections
+    args.append({"image": inpaint_img, "mask": inpaint_msk} if do_inpaint else None)  # inpaint_input_image
+    args.append(str(body.get("inpaint_prompt", "") or ""))  # inpaint_additional_prompt
+    args.append(None)                                   # inpaint_mask_image_upload
 
     # developer / advanced block
     perf = str(pick("performance", config.default_performance))

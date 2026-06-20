@@ -17,6 +17,11 @@ declare(strict_types=1);
 
 namespace DedrisGenAI\UI;
 
+// A proxied call can occasionally take a while (the engine's one-time bootstrap /
+// model provisioning), so don't let PHP's default 30s max_execution_time kill the
+// request before the EngineClient's own cURL timeout decides the outcome.
+@set_time_limit(130);
+
 require_once __DIR__ . '/../lib/Config.php';
 require_once __DIR__ . '/../lib/EngineClient.php';
 

@@ -153,6 +153,13 @@
     if (state.progressKey) {
       $('#progress-msg').textContent = t(state.progressKey, state.progressVars);
     }
+    // model-download bar text (if showing a keyed message)
+    if (state.modelBusy && state.modelBarKey) {
+      const el2 = document.getElementById('model-bar-text');
+      if (el2) el2.textContent = t(state.modelBarKey);
+    }
+    // re-localize the inpaint editor's dynamic bits
+    if (typeof refreshInpaintI18n === 'function') refreshInpaintI18n();
   }
 
   // ============================================================== Simple/Advanced mode
@@ -233,6 +240,14 @@
     bannerKey: null, bannerVars: null, bannerKind: 'info', bannerSpin: false,
     progressKey: null, progressVars: null,
     enginePillKey: null, enginePillPrefix: '',
+    // model-download bookkeeping (Feature 1): true while a preset's model is
+    // downloading, which keeps the Generate button disabled with a loading bar.
+    modelBusy: false,
+    modelPreset: null,
+    modelPollTimer: null,
+    modelStartTime: 0,
+    modelElapsedTimer: null,
+    modelBarKey: null,
   };
   const LORA_COUNT = 5;
 
@@ -267,6 +282,113 @@
     elBannerSpin.style.display = spinning ? '' : 'none';
   }
   function hideBanner() { elBanner.className = 'banner'; state.bannerKey = null; }
+
+  // ---------------------------------------------------------------- model download (Feature 1)
+  // On preset selection we ask the engine to ensure that preset's model is
+  // present (POST /api/ensure_model), then poll GET /api/model_status while it
+  // is "downloading", showing a friendly loading bar and disabling Generate.
+  // We never surface an error for an in-progress download — only on real errors.
+  const elModelBar = $('#model-bar');
+  const elModelBarText = $('#model-bar-text');
+  const elModelBarElapsed = $('#model-bar-elapsed');
+
+  function fmtElapsedMs(ms) {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    const mm = String(Math.floor(s / 60)).padStart(2, '0');
+    const ss = String(s % 60).padStart(2, '0');
+    return mm + ':' + ss;
+  }
+
+  function showModelBar() {
+    if (!elModelBar) return;
+    elModelBar.classList.remove('hidden');
+    state.modelBusy = true;
+    updateGenerateEnabled();
+    state.modelStartTime = state.modelStartTime || Date.now();
+    if (elModelBarElapsed) elModelBarElapsed.textContent = fmtElapsedMs(Date.now() - state.modelStartTime);
+    if (!state.modelElapsedTimer) {
+      state.modelElapsedTimer = setInterval(() => {
+        if (elModelBarElapsed) elModelBarElapsed.textContent = fmtElapsedMs(Date.now() - state.modelStartTime);
+      }, 1000);
+    }
+  }
+
+  function hideModelBar() {
+    if (elModelBar) elModelBar.classList.add('hidden');
+    state.modelBusy = false;
+    state.modelStartTime = 0;
+    if (state.modelElapsedTimer) { clearInterval(state.modelElapsedTimer); state.modelElapsedTimer = null; }
+    updateGenerateEnabled();
+  }
+
+  function stopModelPolling() {
+    if (state.modelPollTimer) { clearTimeout(state.modelPollTimer); state.modelPollTimer = null; }
+  }
+
+  // Kick off (or re-check) the model download for a preset. Safe to call on every
+  // preset change and on initial load; a model that's already present resolves
+  // to "ready" immediately and shows nothing.
+  async function ensureModel(preset) {
+    if (!preset) return;
+    const switching = state.modelPreset !== preset;
+    state.modelPreset = preset;
+    stopModelPolling();
+    if (switching) {
+      // restart the elapsed clock for the newly selected preset
+      state.modelStartTime = 0;
+    }
+    let data;
+    try {
+      data = await apiPost('ensure_model', { preset });
+    } catch (e) {
+      // Engine may still be starting; don't nag with a model error for that.
+      // If a download was already shown, leave it; otherwise stay silent.
+      return;
+    }
+    handleModelStatus(preset, data);
+  }
+
+  function handleModelStatus(preset, data) {
+    // Ignore stale responses for a preset the user has since switched away from.
+    if (state.modelPreset !== preset) return;
+    const st = data && (data.state || data.status);
+
+    if (st === 'downloading') {
+      showModelBar();
+      // localized base message; if the engine sent a human message, append it.
+      state.modelBarKey = 'model.downloading';
+      if (elModelBarText) {
+        const base = t('model.downloading');
+        const msg = (data && typeof data.message === 'string' && data.message.trim()) ? data.message.trim() : '';
+        elModelBarText.textContent = msg && msg !== base ? msg : base;
+      }
+      scheduleModelPoll(preset);
+    } else if (st === 'error') {
+      stopModelPolling();
+      hideModelBar();
+      const detail = (data && typeof data.message === 'string' && data.message.trim()) ? data.message.trim() : t('progress.error.unknown');
+      showBannerKey('error', 'model.failed', { msg: detail }, false);
+    } else {
+      // ready | idle | anything else -> nothing to download, clear the bar.
+      stopModelPolling();
+      hideModelBar();
+    }
+  }
+
+  function scheduleModelPoll(preset) {
+    stopModelPolling();
+    state.modelPollTimer = setTimeout(async () => {
+      let data;
+      try {
+        data = await apiGet('model_status?preset=' + encodeURIComponent(preset));
+      } catch (e) {
+        // Transient: keep the bar, retry on the next tick.
+        scheduleModelPoll(preset);
+        return;
+      }
+      handleModelStatus(preset, data);
+    }, 1500);
+  }
 
   // ---------------------------------------------------------------- populate selectors
   function fillSelect(sel, items, { valueKey, labelKey } = {}) {
@@ -489,6 +611,9 @@
   async function loadPreset(name) {
     state.activePreset = name;
     setSeg('preset', name);
+    // Feature 1: make sure this preset's model is present; if it needs to be
+    // downloaded (first use), this shows the loading bar and disables Generate.
+    ensureModel(name);
     try {
       const p = await apiGet('preset?name=' + encodeURIComponent(name));
       applyPreset(p);
@@ -551,9 +676,13 @@
     if (txt) txt.textContent = state.generating ? t('btn.generating') : t('btn.generate');
     if (ico) ico.textContent = state.generating ? '⏳' : '✨';
   }
+  // Generate is disabled while generating OR while a preset's model downloads.
+  function updateGenerateEnabled() {
+    elGen.disabled = state.generating || state.modelBusy;
+  }
   function setGenerating(on) {
     state.generating = on;
-    elGen.disabled = on;
+    updateGenerateEnabled();
     elStop.disabled = !on;
     elSkip.disabled = !on;
     setGenLabel();
@@ -753,6 +882,19 @@
 
   async function onGenerate() {
     if (state.generating) return;
+
+    // Inpaint tab: if an image is loaded we send the mask payload. Block the run
+    // with a localized hint if no region has been painted yet (no empty inpaint).
+    let inpaintExtra = null;
+    if (state.activeTab === 'inpaint' && inpaintHasImage()) {
+      if (!inpaintReady()) {
+        showBannerKey('warn', 'inpaint.paint_hint', null, false);
+        setTimeout(hideBanner, 4000);
+        return;
+      }
+      inpaintExtra = inpaintPayload();
+    }
+
     setGenerating(true);
     startTimers();
     setIndeterminate(true);                 // start animated immediately
@@ -761,6 +903,7 @@
     // NOTE: do NOT clear the feed — results accumulate across generations.
     try {
       const params = gatherParams();
+      if (inpaintExtra) Object.assign(params, inpaintExtra);
       const res = await apiPost('generate', params);
       state.taskId = res && (res.task_id || res.id);
       if (!state.taskId) throw new Error(t('progress.no_task'));
@@ -949,6 +1092,243 @@
     reader.readAsDataURL(file);
   }
 
+  // ---------------------------------------------------------------- inpaint mask editor (Feature 2)
+  // Load a source image onto a display canvas and let the user paint a mask over
+  // it (mouse + touch). The mask is kept on a separate offscreen canvas at the
+  // image's NATIVE resolution (black background, white strokes) so the exported
+  // PNG lines up exactly with the source image sent to the engine.
+  const inpaint = {
+    img: null,            // HTMLImageElement (the loaded source)
+    natW: 0, natH: 0,     // native pixel dimensions
+    dispW: 0, dispH: 0,   // on-screen canvas pixel dimensions
+    scale: 1,             // dispW / natW
+    maskCanvas: null,     // offscreen, native resolution (black + white strokes)
+    maskCtx: null,
+    canvas: null,         // visible display canvas
+    ctx: null,
+    painting: false,
+    last: null,           // last pointer point in native coords
+    brush: 40,            // brush diameter in DISPLAY pixels
+    erase: false,
+    hasMask: false,
+  };
+  const INPAINT_MAX_DISP = 640; // cap the display width so it fits the column
+
+  function bindInpaint() {
+    inpaint.canvas = $('#inpaint-canvas');
+    if (!inpaint.canvas) return;
+    inpaint.ctx = inpaint.canvas.getContext('2d');
+
+    const dz = $('#inpaint-dropzone');
+    const file = $('#inpaint-file');
+    if (dz && file) {
+      dz.addEventListener('click', () => file.click());
+      dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('drag'); });
+      dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+      dz.addEventListener('drop', (e) => {
+        e.preventDefault(); dz.classList.remove('drag');
+        const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f) loadInpaintFile(f);
+      });
+      file.addEventListener('change', () => { if (file.files[0]) loadInpaintFile(file.files[0]); });
+    }
+
+    const brush = $('#inpaint-brush');
+    const brushOut = $('#inpaint-brush-out');
+    if (brush) {
+      const upd = () => { inpaint.brush = Number(brush.value); if (brushOut) brushOut.textContent = String(inpaint.brush); };
+      brush.addEventListener('input', upd);
+      upd();
+    }
+    const brushBtn = $('#inpaint-brush-btn');
+    const eraseBtn = $('#inpaint-erase-btn');
+    const setTool = (erasing) => {
+      inpaint.erase = erasing;
+      if (brushBtn) { brushBtn.classList.toggle('active', !erasing); brushBtn.setAttribute('aria-pressed', String(!erasing)); }
+      if (eraseBtn) { eraseBtn.classList.toggle('active', erasing); eraseBtn.setAttribute('aria-pressed', String(erasing)); }
+    };
+    if (brushBtn) brushBtn.addEventListener('click', () => setTool(false));
+    if (eraseBtn) eraseBtn.addEventListener('click', () => setTool(true));
+
+    const clearBtn = $('#inpaint-clear-btn');
+    if (clearBtn) clearBtn.addEventListener('click', clearInpaintMask);
+
+    // painting (pointer events cover mouse + touch + pen)
+    const c = inpaint.canvas;
+    c.addEventListener('pointerdown', onInpaintDown);
+    c.addEventListener('pointermove', onInpaintMove);
+    window.addEventListener('pointerup', onInpaintUp);
+    c.addEventListener('pointerleave', () => { /* keep painting if button held; pointerup ends it */ });
+  }
+
+  function loadInpaintFile(file) {
+    if (!file || !/^image\//.test(file.type)) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => setupInpaintImage(img);
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function setupInpaintImage(img) {
+    inpaint.img = img;
+    inpaint.natW = img.naturalWidth || img.width;
+    inpaint.natH = img.naturalHeight || img.height;
+    if (!inpaint.natW || !inpaint.natH) return;
+
+    // display size: cap width, preserve aspect ratio
+    const scale = Math.min(1, INPAINT_MAX_DISP / inpaint.natW);
+    inpaint.scale = scale;
+    inpaint.dispW = Math.max(1, Math.round(inpaint.natW * scale));
+    inpaint.dispH = Math.max(1, Math.round(inpaint.natH * scale));
+
+    inpaint.canvas.width = inpaint.dispW;
+    inpaint.canvas.height = inpaint.dispH;
+    inpaint.canvas.style.width = inpaint.dispW + 'px';
+    inpaint.canvas.style.height = inpaint.dispH + 'px';
+
+    // offscreen mask at native resolution. We keep it TRANSPARENT-background with
+    // opaque-white strokes: that makes a translucent display overlay trivial
+    // (source-in only tints the painted pixels), and we composite the strokes
+    // over a black background only at export time to produce the PNG the engine
+    // wants (white = inpaint, black = keep).
+    inpaint.maskCanvas = document.createElement('canvas');
+    inpaint.maskCanvas.width = inpaint.natW;
+    inpaint.maskCanvas.height = inpaint.natH;
+    inpaint.maskCtx = inpaint.maskCanvas.getContext('2d');
+    inpaint.maskCtx.clearRect(0, 0, inpaint.natW, inpaint.natH);
+    inpaint.hasMask = false;
+
+    // reveal editor, hide dropzone
+    const editor = $('#inpaint-editor');
+    const dz = $('#inpaint-dropzone');
+    if (editor) editor.classList.remove('hidden');
+    if (dz) dz.classList.add('hidden');
+
+    redrawInpaint();
+  }
+
+  // map a pointer event to native-resolution image coordinates
+  function inpaintEventPoint(e) {
+    const rect = inpaint.canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (inpaint.canvas.width / rect.width);
+    const y = (e.clientY - rect.top) * (inpaint.canvas.height / rect.height);
+    // convert display px -> native px
+    return { x: x / inpaint.scale, y: y / inpaint.scale };
+  }
+
+  function paintStroke(from, to) {
+    if (!inpaint.maskCtx) return;
+    const ctx = inpaint.maskCtx;
+    // brush radius is given in display px; convert to native px
+    const r = Math.max(1, (inpaint.brush / 2) / inpaint.scale);
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = r * 2;
+    if (inpaint.erase) {
+      // erase = remove painted pixels back to transparent
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.strokeStyle = 'rgba(0,0,0,1)';
+      ctx.fillStyle = 'rgba(0,0,0,1)';
+    } else {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = '#fff';
+      ctx.fillStyle = '#fff';
+      inpaint.hasMask = true;
+    }
+    ctx.beginPath();
+    if (from) { ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y); ctx.stroke(); }
+    // also stamp a dot so single taps paint
+    ctx.beginPath();
+    ctx.arc(to.x, to.y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    redrawInpaint();
+  }
+
+  function onInpaintDown(e) {
+    if (!inpaint.img) return;
+    e.preventDefault();
+    inpaint.painting = true;
+    try { inpaint.canvas.setPointerCapture(e.pointerId); } catch (_) {}
+    const p = inpaintEventPoint(e);
+    inpaint.last = p;
+    paintStroke(null, p);
+  }
+  function onInpaintMove(e) {
+    if (!inpaint.painting) return;
+    e.preventDefault();
+    const p = inpaintEventPoint(e);
+    paintStroke(inpaint.last, p);
+    inpaint.last = p;
+  }
+  function onInpaintUp() {
+    inpaint.painting = false;
+    inpaint.last = null;
+  }
+
+  // draw the source image plus a translucent overlay of the painted mask
+  function redrawInpaint() {
+    if (!inpaint.ctx || !inpaint.img) return;
+    const ctx = inpaint.ctx;
+    ctx.clearRect(0, 0, inpaint.dispW, inpaint.dispH);
+    ctx.drawImage(inpaint.img, 0, 0, inpaint.dispW, inpaint.dispH);
+    if (inpaint.maskCanvas && inpaint.hasMask) {
+      // tint white mask pixels with a translucent accent overlay
+      const tmp = document.createElement('canvas');
+      tmp.width = inpaint.dispW; tmp.height = inpaint.dispH;
+      const tctx = tmp.getContext('2d');
+      tctx.drawImage(inpaint.maskCanvas, 0, 0, inpaint.dispW, inpaint.dispH);
+      // keep only the painted (white) areas, recolor them
+      tctx.globalCompositeOperation = 'source-in';
+      tctx.fillStyle = 'rgba(124, 92, 255, 0.55)';
+      tctx.fillRect(0, 0, inpaint.dispW, inpaint.dispH);
+      ctx.drawImage(tmp, 0, 0);
+    }
+  }
+
+  function clearInpaintMask() {
+    if (!inpaint.maskCtx) return;
+    inpaint.maskCtx.clearRect(0, 0, inpaint.natW, inpaint.natH);
+    inpaint.hasMask = false;
+    redrawInpaint();
+  }
+
+  // Has the user loaded an image and painted at least some mask?
+  function inpaintReady() { return !!(inpaint.img && inpaint.hasMask); }
+  function inpaintHasImage() { return !!inpaint.img; }
+
+  // Build the generate payload pieces at native resolution.
+  function inpaintPayload() {
+    if (!inpaint.img || !inpaint.maskCanvas) return null;
+    // source image at native resolution
+    const src = document.createElement('canvas');
+    src.width = inpaint.natW; src.height = inpaint.natH;
+    src.getContext('2d').drawImage(inpaint.img, 0, 0, inpaint.natW, inpaint.natH);
+
+    // mask PNG: black background, white where painted, exact native size. We
+    // composite the transparent-bg stroke canvas onto an opaque black fill.
+    const mask = document.createElement('canvas');
+    mask.width = inpaint.natW; mask.height = inpaint.natH;
+    const mctx = mask.getContext('2d');
+    mctx.fillStyle = '#000';
+    mctx.fillRect(0, 0, inpaint.natW, inpaint.natH);
+    mctx.drawImage(inpaint.maskCanvas, 0, 0);
+
+    return {
+      input_mode: 'inpaint',
+      inpaint_image: src.toDataURL('image/png'),
+      inpaint_mask: mask.toDataURL('image/png'),
+      inpaint_prompt: ($('#inpaint_prompt') ? $('#inpaint_prompt').value : ''),
+    };
+  }
+
+  // re-localize anything in the inpaint editor that isn't a plain data-i18n node
+  function refreshInpaintI18n() { /* brush-size value + tool labels are static/data-i18n */ }
+
   // ---------------------------------------------------------------- range / input bindings
   function bindControls() {
     bindRange('image_number', (v) => String(parseInt(v)));
@@ -1007,6 +1387,7 @@
     bindControls();
     bindTabs();
     bindDropzones();
+    bindInpaint();
 
     // Restore the accumulating results feed from a previous session.
     loadResults();
