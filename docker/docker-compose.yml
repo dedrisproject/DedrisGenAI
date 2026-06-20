@@ -1,0 +1,30 @@
+# Run DedrisGenAI (Python engine + PHP web UI) in a container.
+#   docker compose -f docker/docker-compose.yml up --build
+# Then open http://localhost:8888
+volumes:
+  dedrisgenai-data:
+
+services:
+  app:
+    # Build context is the repo root so engine/ AND webui/ are both included.
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: dedrisgenai
+    ports:
+      - "8888:8888"          # the PHP web UI (the only exposed service)
+    environment:
+      - DEDRIS_ENGINE_PORT=7866
+      - DEDRIS_UI_PORT=8888
+      - DEDRIS_HOST=0.0.0.0
+      - DATADIR=/content/data   # persistent models + outputs live here
+    volumes:
+      - dedrisgenai-data:/content/data
+    tty: true
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']
+              capabilities: [compute, utility]
