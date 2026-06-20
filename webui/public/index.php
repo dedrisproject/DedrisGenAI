@@ -146,16 +146,16 @@ foreach (Lang::SUPPORTED as $code) {
         </div>
       </div>
 
-      <!-- Image-input tabs (advanced only) — the prominent MAIN box -->
+      <!-- Image-input tabs (advanced only) — the prominent MAIN box.
+           Only the two input modes that are actually wired to the engine are
+           rendered: Text to Image and Inpaint. The previously-stubbed tabs
+           (Upscale/Vary, Image Prompt, Outpaint extras, Describe, Enhance,
+           Metadata) were non-functional and have been removed; they remain in
+           git history if they are ever wired up. -->
       <div class="card adv-only input-tabs-card">
         <div class="tabs" id="input-tabs" role="tablist">
           <button class="tab active" data-tab="text"     role="tab" data-i18n="tab.text"><?= htmlspecialchars($t('tab.text', 'Text to Image'), ENT_QUOTES) ?></button>
-          <button class="tab" data-tab="uov"      role="tab" data-i18n="tab.uov"><?= htmlspecialchars($t('tab.uov', 'Upscale / Vary'), ENT_QUOTES) ?></button>
-          <button class="tab" data-tab="ip"       role="tab" data-i18n="tab.ip"><?= htmlspecialchars($t('tab.ip', 'Image Prompt'), ENT_QUOTES) ?></button>
-          <button class="tab" data-tab="inpaint"  role="tab" data-i18n="tab.inpaint"><?= htmlspecialchars($t('tab.inpaint', 'Inpaint / Outpaint'), ENT_QUOTES) ?></button>
-          <button class="tab" data-tab="describe" role="tab" data-i18n="tab.describe"><?= htmlspecialchars($t('tab.describe', 'Describe'), ENT_QUOTES) ?></button>
-          <button class="tab" data-tab="enhance"  role="tab" data-i18n="tab.enhance"><?= htmlspecialchars($t('tab.enhance', 'Enhance'), ENT_QUOTES) ?></button>
-          <button class="tab" data-tab="metadata" role="tab" data-i18n="tab.metadata"><?= htmlspecialchars($t('tab.metadata', 'Metadata'), ENT_QUOTES) ?></button>
+          <button class="tab" data-tab="inpaint"  role="tab" data-i18n="tab.inpaint"><?= htmlspecialchars($t('tab.inpaint', 'Inpaint'), ENT_QUOTES) ?></button>
         </div>
 
         <!-- Text to image (default) -->
@@ -163,40 +163,7 @@ foreach (Lang::SUPPORTED as $code) {
           <p class="muted" style="margin:0" data-i18n="panel.text.desc"><?= htmlspecialchars($t('panel.text.desc', ''), ENT_QUOTES) ?></p>
         </div>
 
-        <!-- Upscale / Vary -->
-        <div class="tabpanel" data-panel="uov">
-          <label class="field">
-            <span class="lbl" data-i18n="uov.mode"><?= htmlspecialchars($t('uov.mode', 'Mode'), ENT_QUOTES) ?></span>
-            <select id="uov_method">
-              <option value="Disabled" data-i18n="uov.disabled"><?= htmlspecialchars($t('uov.disabled', 'Disabled'), ENT_QUOTES) ?></option>
-              <option value="Vary (Subtle)" data-i18n="uov.vary.subtle"><?= htmlspecialchars($t('uov.vary.subtle', 'Vary (Subtle)'), ENT_QUOTES) ?></option>
-              <option value="Vary (Strong)" data-i18n="uov.vary.strong"><?= htmlspecialchars($t('uov.vary.strong', 'Vary (Strong)'), ENT_QUOTES) ?></option>
-              <option value="Upscale (1.5x)" data-i18n="uov.up.15"><?= htmlspecialchars($t('uov.up.15', 'Upscale (1.5x)'), ENT_QUOTES) ?></option>
-              <option value="Upscale (2x)" data-i18n="uov.up.2"><?= htmlspecialchars($t('uov.up.2', 'Upscale (2x)'), ENT_QUOTES) ?></option>
-              <option value="Upscale (Fast 2x)" data-i18n="uov.up.fast2"><?= htmlspecialchars($t('uov.up.fast2', 'Upscale (Fast 2x)'), ENT_QUOTES) ?></option>
-            </select>
-          </label>
-          <div class="dropzone" data-drop="uov_image"><div class="icon">⬆️</div><div data-i18n="uov.drop"><?= htmlspecialchars($t('uov.drop', ''), ENT_QUOTES) ?></div></div>
-          <input type="file" accept="image/*" class="hidden" data-file="uov_image">
-          <p class="note" data-i18n="uov.note"><?= htmlspecialchars($t('uov.note', ''), ENT_QUOTES) ?></p>
-        </div>
-
-        <!-- Image Prompt -->
-        <div class="tabpanel" data-panel="ip">
-          <div class="dropzone" data-drop="ip_image"><div class="icon">🖼️</div><div data-i18n="ip.drop"><?= htmlspecialchars($t('ip.drop', ''), ENT_QUOTES) ?></div></div>
-          <input type="file" accept="image/*" class="hidden" data-file="ip_image">
-          <div class="row cols-2" style="margin-top:12px">
-            <label class="field"><span class="lbl" data-i18n="ip.type"><?= htmlspecialchars($t('ip.type', 'Type'), ENT_QUOTES) ?></span>
-              <select id="ip_type"><option>ImagePrompt</option><option>PyraCanny</option><option>CPDS</option><option>FaceSwap</option></select>
-            </label>
-            <label class="field"><span class="field-label"><span data-i18n="ip.weight"><?= htmlspecialchars($t('ip.weight', 'Weight'), ENT_QUOTES) ?></span><span class="val" data-out="ip_weight">0.60</span></span>
-              <input type="range" id="ip_weight" min="0" max="2" step="0.05" value="0.6">
-            </label>
-          </div>
-          <p class="note" data-i18n="ip.note"><?= htmlspecialchars($t('ip.note', ''), ENT_QUOTES) ?></p>
-        </div>
-
-        <!-- Inpaint / Outpaint -->
+        <!-- Inpaint -->
         <div class="tabpanel" data-panel="inpaint">
           <!-- upload / drop zone (hidden once an image is loaded) -->
           <div class="dropzone" id="inpaint-dropzone"><div class="icon">🎨</div><div data-i18n="inpaint.upload"><?= htmlspecialchars($t('inpaint.upload', 'Drop or click to upload the image to edit'), ENT_QUOTES) ?></div></div>
@@ -230,31 +197,6 @@ foreach (Lang::SUPPORTED as $code) {
             </select>
           </label>
           <p class="note" data-i18n="inpaint.note"><?= htmlspecialchars($t('inpaint.note', ''), ENT_QUOTES) ?></p>
-        </div>
-
-        <!-- Describe -->
-        <div class="tabpanel" data-panel="describe">
-          <div class="dropzone" data-drop="describe_image"><div class="icon">🔍</div><div data-i18n="describe.drop"><?= htmlspecialchars($t('describe.drop', ''), ENT_QUOTES) ?></div></div>
-          <input type="file" accept="image/*" class="hidden" data-file="describe_image">
-          <label class="field" style="margin-top:12px"><span class="lbl" data-i18n="describe.type"><?= htmlspecialchars($t('describe.type', 'Content type'), ENT_QUOTES) ?></span>
-            <select id="describe_type"><option data-i18n="describe.type.photo"><?= htmlspecialchars($t('describe.type.photo', 'Photograph'), ENT_QUOTES) ?></option><option data-i18n="describe.type.art"><?= htmlspecialchars($t('describe.type.art', 'Art/Anime'), ENT_QUOTES) ?></option></select>
-          </label>
-          <button class="btn block" id="btn-describe" style="margin-top:6px" disabled data-i18n="describe.btn"><?= htmlspecialchars($t('describe.btn', 'Describe image'), ENT_QUOTES) ?></button>
-          <p class="note" data-i18n="describe.note"><?= htmlspecialchars($t('describe.note', ''), ENT_QUOTES) ?></p>
-        </div>
-
-        <!-- Enhance -->
-        <div class="tabpanel" data-panel="enhance">
-          <label class="check"><input type="checkbox" id="enhance_enabled"> <span data-i18n="enhance.enable"><?= htmlspecialchars($t('enhance.enable', ''), ENT_QUOTES) ?></span></label>
-          <p class="note" data-i18n="enhance.note"><?= htmlspecialchars($t('enhance.note', ''), ENT_QUOTES) ?></p>
-        </div>
-
-        <!-- Metadata -->
-        <div class="tabpanel" data-panel="metadata">
-          <div class="dropzone" data-drop="metadata_image"><div class="icon">🧾</div><div data-i18n="metadata.drop"><?= htmlspecialchars($t('metadata.drop', ''), ENT_QUOTES) ?></div></div>
-          <input type="file" accept="image/*" class="hidden" data-file="metadata_image">
-          <pre id="metadata_out" class="status" style="display:none;background:var(--bg-2);border:1px solid var(--border);border-radius:8px;padding:12px;white-space:pre-wrap;font-family:var(--mono);font-size:12px;margin-top:12px"></pre>
-          <p class="note" data-i18n="metadata.note"><?= htmlspecialchars($t('metadata.note', ''), ENT_QUOTES) ?></p>
         </div>
       </div>
 
@@ -304,8 +246,10 @@ foreach (Lang::SUPPORTED as $code) {
         </div>
       </div>
 
-      <!-- Styles -->
-      <div class="card">
+      <!-- Styles — text-to-image only. Visibility is toggled by app.js based on
+           the effective active input mode: shown for Text to Image (always the
+           case in Simple mode), hidden when the Inpaint tab is active. -->
+      <div class="card" id="styles-card">
         <div class="card-body">
           <div class="section-title" data-i18n="section.styles"><?= htmlspecialchars($t('section.styles', 'Styles'), ENT_QUOTES) ?></div>
           <div class="styles-box">

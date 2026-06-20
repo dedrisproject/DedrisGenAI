@@ -175,6 +175,9 @@
     });
     state.mode = mode;
     if (persist) { try { localStorage.setItem(LS_MODE, mode); } catch (_) {} }
+    // Styles are text-to-image only; re-evaluate on every mode switch (Simple is
+    // effectively text-to-image, so styles stay visible there).
+    updateStylesVisibility();
   }
   function initMode() {
     let mode = 'simple';
@@ -478,6 +481,20 @@
   function setStyles(names) {
     state.selectedStyles = new Set(names || []);
     renderStyles($('#style-search').value);
+  }
+
+  // The Styles picker belongs to Text-to-Image only. It is visible whenever the
+  // effective input mode is text-to-image, and hidden when Inpaint is active.
+  // In Simple mode the (advanced-only) input tabs are hidden and the flow is
+  // effectively Text-to-Image, so state.activeTab stays 'text' and styles remain
+  // visible. We re-evaluate this on tab change and on Simple/Advanced switch.
+  function updateStylesVisibility() {
+    const card = $('#styles-card');
+    if (!card) return;
+    // In Simple mode the tabs box is hidden; treat the mode as text-to-image.
+    const effectiveTab = (state.mode === 'simple') ? 'text' : state.activeTab;
+    const showStyles = (effectiveTab !== 'inpaint');
+    card.classList.toggle('hidden', !showStyles);
   }
 
   // ---------------------------------------------------------------- LoRA rows
@@ -1056,6 +1073,7 @@
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeLightbox(); });
 
   // ---------------------------------------------------------------- tabs
+  // Only two input modes are wired and rendered: Text to Image and Inpaint.
   function bindTabs() {
     $$('#input-tabs .tab').forEach((tab) => {
       tab.addEventListener('click', () => {
@@ -1066,6 +1084,8 @@
         state.activeTab = name;
         const panel = $(`.tabpanel[data-panel="${name}"]`);
         if (panel) panel.classList.add('active');
+        // Styles belong to text-to-image only; hide them when Inpaint is active.
+        updateStylesVisibility();
       });
     });
   }
@@ -1389,6 +1409,8 @@
     bindTabs();
     bindDropzones();
     bindInpaint();
+    // Set initial Styles visibility for the current mode / active tab.
+    updateStylesVisibility();
 
     // Restore the accumulating results feed from a previous session.
     loadResults();
