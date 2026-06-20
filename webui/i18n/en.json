@@ -72,6 +72,7 @@
   "estimate.line": "⏱️ ~{per}s per image · ~{total}s total ({device})",
   "estimate.line.one": "⏱️ ~{per}s per image ({device})",
   "estimate.calibrated": "(measured)",
+  "estimate.firstrun": "· first image also loads the model (~+{load}s)",
   "tab.text": "Text to Image",
   "tab.uov": "Create variants",
   "tab.ip": "Image Prompt",

@@ -1098,6 +1098,11 @@
       elEstimate.append(document.createTextNode(' '));
       elEstimate.append(el('span', { class: 'calibrated' }, t('estimate.calibrated')));
     }
+    if (data.first_run && Number(data.model_load_seconds) > 0) {
+      elEstimate.append(document.createTextNode(' '));
+      elEstimate.append(el('span', { class: 'estimate-firstrun' },
+        t('estimate.firstrun', { load: Math.round(Number(data.model_load_seconds)) })));
+    }
     elEstimate.classList.remove('hidden');
   }
 

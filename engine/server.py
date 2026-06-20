@@ -186,9 +186,20 @@ def detect_device_name(device=None):
 #
 # The PHP proxy / web UI should mirror this exact shape.
 #
-# Baseline seconds-per-step at 1024x1024 by device (used before calibration).
-_EST_BASELINE_SPS = {"cuda": 0.25, "mps": 3.5, "cpu": 25.0}
-# Per-image fixed overhead (model warmup, VAE decode, save) added once per image.
+# Baseline seconds-per-step at 1024x1024 by device (used before calibration). The
+# generic "cuda" value is deliberately conservative because GPUs vary ~10x; specific
+# GPUs are matched by name below (a free-Colab T4 is far slower than an A100/4090).
+_EST_BASELINE_SPS = {"cuda": 1.2, "mps": 3.5, "cpu": 25.0}
+# GPU-name substring -> seconds/step @ 1024^2 (SDXL). Matched against device_name.
+_EST_GPU_SPS = [
+    ("h100", 0.18), ("a100", 0.25), ("l40", 0.35), ("l4", 0.7), ("a10", 0.6),
+    ("4090", 0.2), ("4080", 0.3), ("3090", 0.35), ("3080", 0.5), ("3070", 0.8),
+    ("3060", 1.2), ("2080", 0.9), ("v100", 0.9), ("p100", 1.8), ("t4", 2.2),
+    ("1080", 2.5), ("titan", 0.8),
+]
+# One-time model-load cost (first generation only on a device), seconds.
+_EST_MODEL_LOAD_S = {"cuda": 45.0, "mps": 60.0, "cpu": 90.0}
+# Per-image fixed overhead (VAE decode, save) added once per image.
 _EST_OVERHEAD_S = 2.0
 # Resolution factor clamp, so a wild aspect-ratio string can't blow up the estimate.
 _EST_RES_FACTOR_MIN = 0.25
@@ -198,6 +209,20 @@ _EST_RES_FACTOR_MAX = 4.0
 # in by get_progress() after each successful run; consumed by /api/estimate.
 _EST_EMA_SPS = {}          # device -> float (seconds/step @ 1024^2)
 _EST_EMA_LOCK = threading.Lock()
+# Devices that have completed at least one generation (model now resident in VRAM),
+# so the estimate stops adding the one-time model-load cost.
+_EST_MODEL_LOADED = set()
+
+
+def _baseline_sps(device, device_name=None):
+    """Seconds-per-step baseline @ 1024^2, GPU-name aware for CUDA (T4 vs A100 etc.)."""
+    if device == "cuda":
+        n = (device_name or "").lower()
+        for key, val in _EST_GPU_SPS:
+            if key in n:
+                return val
+        return _EST_BASELINE_SPS["cuda"]
+    return _EST_BASELINE_SPS.get(device, _EST_BASELINE_SPS["cpu"])
 
 
 def _perf_to_steps(performance):
@@ -246,8 +271,9 @@ def _record_measured_sps(device, measured):
         measured = float(measured)
         if not (measured > 0):
             return
-        lo = _EST_BASELINE_SPS.get(device, 5.0) * 0.05
-        hi = _EST_BASELINE_SPS.get(device, 5.0) * 20.0
+        base = _baseline_sps(device, detect_device_name(device))
+        lo = base * 0.05
+        hi = base * 20.0
         if measured < lo or measured > hi:
             return
         with _EST_EMA_LOCK:
@@ -284,14 +310,21 @@ def estimate_generation(performance=None, image_number=1, aspect_ratio=None, ste
     with _EST_EMA_LOCK:
         ema = _EST_EMA_SPS.get(device)
     calibrated = ema is not None and ema > 0
-    sps = ema if calibrated else _EST_BASELINE_SPS.get(device, _EST_BASELINE_SPS["cpu"])
+    sps = ema if calibrated else _baseline_sps(device, device_name)
 
-    seconds_per_image = int(round(sps * steps * res_factor + _EST_OVERHEAD_S))
-    seconds_per_image = max(1, seconds_per_image)
-    total_seconds = seconds_per_image * n
+    seconds_per_image = max(1, int(round(sps * steps * res_factor + _EST_OVERHEAD_S)))
+
+    # The first generation on a device also loads the model into VRAM (one-time,
+    # tens of seconds on a cold start). Add it until a run has completed here.
+    model_loaded = device in _EST_MODEL_LOADED
+    model_load_seconds = 0 if model_loaded else int(round(_EST_MODEL_LOAD_S.get(device, 60.0)))
+
+    total_seconds = seconds_per_image * n + model_load_seconds
 
     note = (f"With your compute ({device_name}), ~{seconds_per_image}s per image "
             f"(~{total_seconds}s total).")
+    if model_load_seconds:
+        note += f" The first image also loads the model (~+{model_load_seconds}s, one time)."
 
     return {
         "device": device,
@@ -300,6 +333,8 @@ def estimate_generation(performance=None, image_number=1, aspect_ratio=None, ste
         "seconds_per_image": seconds_per_image,
         "total_seconds": total_seconds,
         "calibrated": bool(calibrated),
+        "first_run": (not model_loaded),
+        "model_load_seconds": model_load_seconds,
         "note": note,
     }
 
@@ -1466,6 +1501,14 @@ def get_progress(task_id):
                     images.append(_outputs_url_for(r))
             break
 
+    # Stamp when actual sampling started (first real progress) so calibration can
+    # measure steady-state seconds-per-step excluding the one-time model load.
+    if progress > 0 and getattr(task, "_sampling_started", None) is None:
+        try:
+            task._sampling_started = time.time()
+        except Exception:
+            pass
+
     if finished:
         if task.last_stop == "stop":
             state = "stopped"
@@ -1491,12 +1534,16 @@ def get_progress(task_id):
             # elapsed / total_steps gives seconds-per-step for the active device;
             # _record_measured_sps folds it into the EMA (ignoring outliers).
             try:
-                started = getattr(task, "_est_started", None)
+                _dev = detect_device()
+                _EST_MODEL_LOADED.add(_dev)  # model is now resident in VRAM
+                # Prefer the sampling window (excludes the one-time model load) for an
+                # accurate steady-state seconds-per-step; fall back to total elapsed.
+                sstart = getattr(task, "_sampling_started", None) or getattr(task, "_est_started", None)
                 est_steps = getattr(task, "_est_steps", None)
-                if started and est_steps and est_steps > 0:
-                    elapsed = time.time() - started
+                if sstart and est_steps and est_steps > 0:
+                    elapsed = time.time() - sstart
                     if elapsed > 0:
-                        _record_measured_sps(detect_device(), elapsed / est_steps)
+                        _record_measured_sps(_dev, elapsed / est_steps)
             except Exception:
                 pass
         with _TASKS_LOCK:
