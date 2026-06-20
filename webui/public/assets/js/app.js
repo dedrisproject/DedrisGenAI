@@ -161,6 +161,8 @@
     }
     // re-localize the inpaint editor's dynamic bits
     if (typeof refreshInpaintI18n === 'function') refreshInpaintI18n();
+    // re-fetch + re-render the time estimate so its localized phrase updates
+    if (typeof refreshEstimate === 'function') refreshEstimate();
   }
 
   // ============================================================== Simple/Advanced mode
@@ -191,12 +193,14 @@
     });
   }
 
-  // ============================================================== Performance collapsible
-  // Collapsed on first load; remembers the user's choice across visits. Works in
-  // both Simple and Advanced modes (the section lives outside any adv-only block).
+  // ============================================================== Performance control
+  // Performance used to be a collapsible (#performance-section) in the left column.
+  // It now lives as a plain labeled control inside the Settings modal, so there is
+  // no collapsible open/closed state to manage. The function is kept as a guarded
+  // no-op so the boot sequence stays stable even if the element is absent.
   function initPerformanceSection() {
     const sec = $('#performance-section');
-    if (!sec) return;
+    if (!sec) return; // Performance is no longer collapsible (moved to Settings modal).
     let open = false;
     try { open = localStorage.getItem(LS_PERF) === '1'; } catch (_) {}
     sec.open = open;
@@ -734,6 +738,78 @@
     };
   }
 
+  // ---------------------------------------------------------------- live time estimate
+  // Purely informational line shown under the Generate row. Reads the current
+  // settings (performance / image number / aspect ratio / optional steps
+  // override), asks the engine GET /api/estimate, and renders a localized phrase
+  // from the returned numbers. It NEVER blocks generation and NEVER surfaces an
+  // error: if the engine is unreachable the line is simply hidden.
+  const elEstimate = $('#time-estimate');
+  let estimateTimer = null;   // debounce handle
+  let estimateSeq = 0;        // guards against out-of-order responses
+
+  function hideEstimate() {
+    if (elEstimate) { elEstimate.classList.add('hidden'); elEstimate.textContent = ''; }
+  }
+
+  // Render the estimate line from an /api/estimate payload using the localized
+  // i18n template, so the phrase itself is translated.
+  function renderEstimate(data) {
+    if (!elEstimate || !data) { hideEstimate(); return; }
+    const per = Math.round(Number(data.seconds_per_image));
+    const total = Math.round(Number(data.total_seconds));
+    const device = (data.device_name != null && String(data.device_name).trim()) ? String(data.device_name).trim() : '';
+    const imageNumber = Number($('#image_number') ? $('#image_number').value : 1) || 1;
+    if (!Number.isFinite(per) || per <= 0) { hideEstimate(); return; }
+
+    const vars = { per, total: Number.isFinite(total) && total > 0 ? total : per, device };
+    // For a single image, the "total" is redundant; use the shorter phrasing.
+    const text = (imageNumber <= 1) ? t('estimate.line.one', vars) : t('estimate.line', vars);
+
+    elEstimate.textContent = '';
+    elEstimate.append(document.createTextNode(text));
+    if (data.calibrated) {
+      elEstimate.append(document.createTextNode(' '));
+      elEstimate.append(el('span', { class: 'calibrated' }, t('estimate.calibrated')));
+    }
+    elEstimate.classList.remove('hidden');
+  }
+
+  // Fetch + render the current estimate (same-origin proxy). Debounced via
+  // scheduleEstimate(); call this directly only for an immediate refresh.
+  async function refreshEstimate() {
+    if (!elEstimate) return;
+    const seq = ++estimateSeq;
+    const performance = segValue('performance') || 'Speed';
+    const imageNumber = Number($('#image_number') ? $('#image_number').value : 1) || 1;
+    const aspectRatio = $('#aspect_ratio') ? $('#aspect_ratio').value : '';
+    const stepsEl = $('#steps_override');
+    const stepsOverride = stepsEl ? Number(stepsEl.value) : -1;
+
+    const qs = new URLSearchParams();
+    qs.set('performance', performance);
+    qs.set('image_number', String(imageNumber));
+    if (aspectRatio) qs.set('aspect_ratio', aspectRatio);
+    if (Number.isFinite(stepsOverride) && stepsOverride > 0) qs.set('steps_override', String(stepsOverride));
+
+    let data;
+    try {
+      data = await apiGet('estimate?' + qs.toString());
+    } catch (e) {
+      // Engine unreachable / no estimate -> stay silent (never an error).
+      if (seq === estimateSeq) hideEstimate();
+      return;
+    }
+    if (seq !== estimateSeq) return;   // a newer request superseded this one
+    renderEstimate(data);
+  }
+
+  // Debounced trigger used by the settings change/input listeners.
+  function scheduleEstimate(delay = 250) {
+    if (estimateTimer) clearTimeout(estimateTimer);
+    estimateTimer = setTimeout(() => { estimateTimer = null; refreshEstimate(); }, delay);
+  }
+
   // ---------------------------------------------------------------- generation flow
   const elGen = $('#btn-generate');
   const elStop = $('#btn-stop');
@@ -938,14 +1014,31 @@
     return added;
   }
 
-  /** Render the whole feed, newest first. */
+  /** Render the whole feed, newest first. Each card keeps its click-to-lightbox
+   *  behaviour and gains two action buttons (Edit Image / Create variants) that
+   *  hand the image off to the matching input tab. The buttons stopPropagation so
+   *  they never trigger the lightbox. */
   function renderFeed() {
     elFeed.innerHTML = '';
     // newest first
     for (let i = state.results.length - 1; i >= 0; i--) {
       const url = state.results[i];
-      const a = el('a', { href: '#', onclick: (e) => { e.preventDefault(); openLightbox(url); } },
-        el('img', { src: url, alt: t('results.preview.alt'), loading: 'lazy' }));
+      const editBtn = el('button', {
+        type: 'button', class: 'gallery-act gallery-act-edit',
+        title: t('gallery.edit'), 'aria-label': t('gallery.edit'),
+        onclick: (e) => { e.preventDefault(); e.stopPropagation(); sendToInpaint(url); },
+      }, el('span', { class: 'gallery-act-ico', 'aria-hidden': 'true' }, '🎨'),
+         el('span', { class: 'gallery-act-txt' }, t('gallery.edit')));
+      const varBtn = el('button', {
+        type: 'button', class: 'gallery-act gallery-act-variants',
+        title: t('gallery.variants'), 'aria-label': t('gallery.variants'),
+        onclick: (e) => { e.preventDefault(); e.stopPropagation(); sendToVariants(url); },
+      }, el('span', { class: 'gallery-act-ico', 'aria-hidden': 'true' }, '🖼️'),
+         el('span', { class: 'gallery-act-txt' }, t('gallery.variants')));
+      const actions = el('div', { class: 'gallery-actions' }, editBtn, varBtn);
+      const a = el('a', { href: '#', class: 'gallery-item', onclick: (e) => { e.preventDefault(); openLightbox(url); } },
+        el('img', { src: url, alt: t('results.preview.alt'), loading: 'lazy' }),
+        actions);
       elFeed.append(a);
     }
     const n = state.results.length;
@@ -1128,6 +1221,9 @@
     try { localStorage.removeItem(LS_TASK); } catch (_) {}
     stopTimers();
     setGenerating(false);
+    // A run just completed: the engine may now have a calibrated (measured)
+    // estimate, so refresh the informational line.
+    refreshEstimate();
   }
 
   async function onStop() {
@@ -1204,6 +1300,39 @@
     $$('#input-tabs .tab').forEach((tab) => {
       tab.addEventListener('click', () => selectTab(tab.dataset.tab));
     });
+  }
+
+  // Make a given input tab visible & active. The input tabs only exist in
+  // Advanced mode, so switch to Advanced first if we're in Simple; applyMode()
+  // and selectTab() both run placePrompt() + updateStylesVisibility() for us.
+  function activateInputTab(name) {
+    if (state.mode !== 'advanced') applyMode('advanced');
+    selectTab(name);
+  }
+
+  // Bring an editor into view so the user sees the image was loaded.
+  function focusEditor(sel) {
+    const node = $(sel);
+    if (node && typeof node.scrollIntoView === 'function') {
+      try { node.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) { node.scrollIntoView(); }
+    }
+  }
+
+  // ---------------------------------------------------------------- gallery hand-off
+  // From a result image in the feed: load it into the Edit Image (inpaint) tab,
+  // ready to paint a mask. Accepts a same-origin output URL.
+  function sendToInpaint(url) {
+    if (!url) return;
+    activateInputTab('inpaint');
+    loadInpaintImage(url);
+    focusEditor('#inpaint-editor');
+  }
+  // From a result image in the feed: load it into the Create variants (uov) tab.
+  function sendToVariants(url) {
+    if (!url) return;
+    activateInputTab('uov');
+    loadUovImage(url);
+    focusEditor('#uov-preview');
   }
 
   // dropzones (visual upload affordance; engine wiring is progressive/non-blocking)
@@ -1300,12 +1429,24 @@
   function loadInpaintFile(file) {
     if (!file || !/^image\//.test(file.type)) return;
     const reader = new FileReader();
-    reader.onload = () => {
-      const img = new Image();
-      img.onload = () => setupInpaintImage(img);
-      img.src = reader.result;
-    };
+    reader.onload = () => loadInpaintImage(reader.result);
     reader.readAsDataURL(file);
+  }
+
+  // Load an image into the inpaint editor from a File's data URL, a same-origin
+  // output URL (e.g. "outputs/x.png"), or an already-decoded HTMLImageElement.
+  // Both the dropzone's File path (via loadInpaintFile) and the gallery hand-off
+  // (sendToInpaint) funnel through here so a loaded image always lands the same way.
+  function loadInpaintImage(imgOrUrl) {
+    if (!imgOrUrl) return;
+    if (imgOrUrl instanceof HTMLImageElement && imgOrUrl.complete && (imgOrUrl.naturalWidth || imgOrUrl.width)) {
+      setupInpaintImage(imgOrUrl);
+      return;
+    }
+    const img = new Image();
+    img.crossOrigin = 'anonymous';            // same-origin outputs, but keeps the canvas exportable
+    img.onload = () => setupInpaintImage(img);
+    img.src = (imgOrUrl instanceof HTMLImageElement) ? imgOrUrl.src : outputUrl(imgOrUrl);
   }
 
   function setupInpaintImage(img) {
@@ -1494,12 +1635,24 @@
   function loadUovFile(file) {
     if (!file || !/^image\//.test(file.type)) return;
     const reader = new FileReader();
-    reader.onload = () => {
-      const img = new Image();
-      img.onload = () => setupUovImage(img);
-      img.src = reader.result;
-    };
+    reader.onload = () => loadUovImage(reader.result);
     reader.readAsDataURL(file);
+  }
+
+  // Load a source image into the Create-variants editor from a File's data URL,
+  // a same-origin output URL, or an already-decoded HTMLImageElement. Both the
+  // dropzone's File path (via loadUovFile) and the gallery hand-off (sendToVariants)
+  // funnel through here.
+  function loadUovImage(imgOrUrl) {
+    if (!imgOrUrl) return;
+    if (imgOrUrl instanceof HTMLImageElement && imgOrUrl.complete && (imgOrUrl.naturalWidth || imgOrUrl.width)) {
+      setupUovImage(imgOrUrl);
+      return;
+    }
+    const img = new Image();
+    img.crossOrigin = 'anonymous';            // same-origin outputs, but keeps the canvas exportable
+    img.onload = () => setupUovImage(img);
+    img.src = (imgOrUrl instanceof HTMLImageElement) ? imgOrUrl.src : outputUrl(imgOrUrl);
   }
 
   function setupUovImage(img) {
@@ -1555,6 +1708,29 @@
     elGen.addEventListener('click', onGenerate);
     elStop.addEventListener('click', onStop);
     elSkip.addEventListener('click', onSkip);
+
+    // Live time estimate: refresh (debounced) whenever a setting that affects it
+    // changes. #performance is a segmented radiogroup whose radios are rebuilt by
+    // applyOptions, so we delegate on the stable container; #image_number and
+    // #aspect_ratio are stable elements.
+    const perfHost = $('#performance');
+    if (perfHost) {
+      perfHost.addEventListener('change', () => scheduleEstimate());
+      perfHost.addEventListener('click', () => scheduleEstimate());
+    }
+    const imgNum = $('#image_number');
+    if (imgNum) {
+      imgNum.addEventListener('input', () => scheduleEstimate());
+      imgNum.addEventListener('change', () => scheduleEstimate());
+    }
+    const aspect = $('#aspect_ratio');
+    if (aspect) aspect.addEventListener('change', () => scheduleEstimate());
+    // Steps override (advanced) also feeds the estimate when set to a real value.
+    const stepsEl = $('#steps_override');
+    if (stepsEl) {
+      stepsEl.addEventListener('input', () => scheduleEstimate());
+      stepsEl.addEventListener('change', () => scheduleEstimate());
+    }
 
     // language selector
     const langSel = $('#lang-select');
@@ -1628,6 +1804,9 @@
 
     // Reconnect to a generation that was running before a page refresh.
     await recoverTask();
+
+    // Show the initial live time estimate now that options + preset are loaded.
+    refreshEstimate();
 
     // keep an eye on the engine; back off polling after it is up
     setInterval(() => { if (!state.generating) checkHealth(false); }, 15000);

@@ -397,6 +397,19 @@ input[type="range"]::-moz-range-thumb {
    own top margin instead of relying on card padding. */
 .gen-buttons { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 10px; margin-top: 16px; }
 
+/* Live generation time estimate — subtle muted line under the Generate row.
+   Hidden (via .hidden) when there's no estimate or the engine is unreachable. */
+.time-estimate {
+  margin-top: 8px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--text-mute);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.time-estimate .calibrated { opacity: .75; font-style: italic; }
+
 /* ---------- Styles multi-select ---------- */
 
 .styles-box { border: 1px solid var(--border-2); border-radius: var(--radius-sm); background: var(--bg-2); box-shadow: inset 0 0 0 1px rgba(124,92,255,.06); }
@@ -674,6 +687,38 @@ input[type="range"]::-moz-range-thumb {
 .gallery a:hover { transform: translateY(-2px); border-color: var(--accent-2); }
 .gallery img { width: 100%; height: 150px; object-fit: cover; display: block; }
 
+/* per-image action overlay (Edit Image / Create variants) */
+.gallery-item { position: relative; }
+.gallery-actions {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  display: flex; gap: 6px; padding: 8px;
+  background: linear-gradient(to top, rgba(4, 6, 10, .88), rgba(4, 6, 10, 0));
+  opacity: 0; transform: translateY(6px);
+  transition: opacity .15s ease, transform .15s ease;
+  pointer-events: none;
+}
+.gallery-item:hover .gallery-actions,
+.gallery-item:focus-within .gallery-actions {
+  opacity: 1; transform: translateY(0); pointer-events: auto;
+}
+.gallery-act {
+  flex: 1 1 0; min-width: 0;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  padding: 6px 8px; font-size: 12px; font-weight: 600; line-height: 1.1;
+  color: var(--text); cursor: pointer;
+  background: rgba(20, 24, 34, .92);
+  border: 1px solid var(--border-2); border-radius: var(--radius-sm);
+  transition: background .12s, border-color .12s, color .12s;
+}
+.gallery-act:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+.gallery-act:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(124, 92, 255, .25); }
+.gallery-act-ico { font-size: 13px; line-height: 1; }
+.gallery-act-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* touch / coarse pointers can't hover — keep the actions always visible there */
+@media (hover: none) {
+  .gallery-actions { opacity: 1; transform: none; pointer-events: auto; }
+}
+
 /* lightbox */
 .lightbox {
   position: fixed; inset: 0; z-index: 100;
@@ -717,6 +762,22 @@ input[type="range"]::-moz-range-thumb {
 .modal-close:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(124, 92, 255, .18); }
 .modal-body { padding: 18px; }
 .modal-body .field:last-child { margin-bottom: 0; }
+
+/* Settings modal now holds several generation controls (Performance, Aspect ratio,
+   Image number, Seed, Output format). Give it a touch more width and keep the body
+   scrollable when it overflows on short viewports. */
+.settings-dialog-wide { max-width: 540px; }
+.settings-dialog-wide .modal-body {
+  max-height: calc(88vh - 56px); overflow-y: auto;
+  display: flex; flex-direction: column; gap: 16px;
+}
+.settings-dialog-wide .modal-body .field { margin-bottom: 0; }
+.settings-section-title {
+  font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--text-mute);
+}
+/* The Performance segmented control spans the modal width and wraps as needed. */
+.settings-dialog-wide .seg#performance { display: flex; flex-wrap: wrap; }
 
 /* utility */
 .muted { color: var(--text-mute); }

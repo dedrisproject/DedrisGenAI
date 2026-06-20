@@ -142,6 +142,166 @@ def detect_device():
     return "cpu"
 
 
+def detect_device_name(device=None):
+    """Return a friendly compute name for the active device. Never raises — falls
+    back to a generic label so /api/health (and /api/estimate) can't fail on it.
+      cuda -> the GPU model via torch.cuda.get_device_name(0)
+      mps  -> "Apple Silicon (MPS)"
+      cpu  -> "CPU"
+    """
+    try:
+        if device is None:
+            device = detect_device()
+        if device == "cuda":
+            try:
+                import torch
+                return torch.cuda.get_device_name(0)
+            except Exception:
+                return "CUDA GPU"
+        if device == "mps":
+            return "Apple Silicon (MPS)"
+        return "CPU"
+    except Exception:
+        return "CPU"
+
+
+# ---------------------------------------------------------------------------
+# Time-estimate baselines + self-calibration
+# ---------------------------------------------------------------------------
+#
+# /api/estimate predicts how long a generation will take, so the UI can show a
+# "~Ns per image" hint before the user clicks Generate. The JSON it returns:
+#
+#   {
+#     "device":             "cuda" | "mps" | "cpu",
+#     "device_name":        friendly compute name (same as /api/health),
+#     "steps":              int   — sampler steps used for the estimate,
+#     "seconds_per_image":  int   — predicted wall time for one image,
+#     "total_seconds":      int   — seconds_per_image * max(1, image_number),
+#     "calibrated":         bool  — true once a real run has tuned the model,
+#     "note":               str   — short human phrase summarizing the estimate
+#   }
+#
+# The PHP proxy / web UI should mirror this exact shape.
+#
+# Baseline seconds-per-step at 1024x1024 by device (used before calibration).
+_EST_BASELINE_SPS = {"cuda": 0.25, "mps": 3.5, "cpu": 25.0}
+# Per-image fixed overhead (model warmup, VAE decode, save) added once per image.
+_EST_OVERHEAD_S = 2.0
+# Resolution factor clamp, so a wild aspect-ratio string can't blow up the estimate.
+_EST_RES_FACTOR_MIN = 0.25
+_EST_RES_FACTOR_MAX = 4.0
+
+# Module-global EMA of MEASURED seconds-per-step per device (at 1024x1024). Filled
+# in by get_progress() after each successful run; consumed by /api/estimate.
+_EST_EMA_SPS = {}          # device -> float (seconds/step @ 1024^2)
+_EST_EMA_LOCK = threading.Lock()
+
+
+def _perf_to_steps(performance):
+    """Map a Performance label -> step count using the engine's flags
+    (Quality 60, Speed 30, Extreme Speed 8, Lightning 4, Hyper-SD 4). Falls back
+    to Speed/30 for anything unknown."""
+    try:
+        perf = flags.Performance(str(performance))
+        s = perf.steps()
+        if s:
+            return int(s)
+    except Exception:
+        pass
+    return int(getattr(flags.Steps, "SPEED", 30)) if flags is not None else 30
+
+
+def _parse_res_factor(aspect_ratio):
+    """Parse width*height from an aspect-ratio string and return (W*H)/(1024*1024),
+    clamped to a sane range. Handles both the raw "W*H" form and the Gradio label
+    "W×H <ratio>". Returns 1.0 on any parse failure."""
+    try:
+        s = str(aspect_ratio or "")
+        # The Gradio label is "1152×896 <gcd ratio>"; the raw form is "1152*896".
+        sep = "×" if "×" in s else ("*" if "*" in s else None)
+        if sep is None:
+            return 1.0
+        first = s.split(sep, 1)
+        w = int("".join(ch for ch in first[0] if ch.isdigit()))
+        # The part after the separator may carry trailing " <ratio>" text.
+        rest = first[1].strip().split()[0]
+        h = int("".join(ch for ch in rest if ch.isdigit()))
+        if w <= 0 or h <= 0:
+            return 1.0
+        factor = (w * h) / (1024.0 * 1024.0)
+        return max(_EST_RES_FACTOR_MIN, min(_EST_RES_FACTOR_MAX, factor))
+    except Exception:
+        return 1.0
+
+
+def _record_measured_sps(device, measured):
+    """Update the per-device EMA of seconds-per-step from a real run. Ignores
+    absurd outliers so a hiccup (paging, throttling) can't poison the estimate."""
+    try:
+        if device is None or measured is None:
+            return
+        measured = float(measured)
+        if not (measured > 0):
+            return
+        lo = _EST_BASELINE_SPS.get(device, 5.0) * 0.05
+        hi = _EST_BASELINE_SPS.get(device, 5.0) * 20.0
+        if measured < lo or measured > hi:
+            return
+        with _EST_EMA_LOCK:
+            prev = _EST_EMA_SPS.get(device)
+            _EST_EMA_SPS[device] = measured if prev is None else (0.6 * prev + 0.4 * measured)
+    except Exception:
+        pass
+
+
+def estimate_generation(performance=None, image_number=1, aspect_ratio=None, steps_override=-1):
+    """Compute a generation time estimate. Returns the /api/estimate JSON dict
+    (shape documented above). Never raises."""
+    device = detect_device()
+    device_name = detect_device_name(device)
+    try:
+        bootstrap()
+    except Exception:
+        pass
+
+    # steps: explicit override wins, else map performance -> steps.
+    try:
+        so = int(steps_override)
+    except (TypeError, ValueError):
+        so = -1
+    steps = so if so > 0 else _perf_to_steps(performance)
+
+    res_factor = _parse_res_factor(aspect_ratio)
+
+    try:
+        n = max(1, int(image_number))
+    except (TypeError, ValueError):
+        n = 1
+
+    with _EST_EMA_LOCK:
+        ema = _EST_EMA_SPS.get(device)
+    calibrated = ema is not None and ema > 0
+    sps = ema if calibrated else _EST_BASELINE_SPS.get(device, _EST_BASELINE_SPS["cpu"])
+
+    seconds_per_image = int(round(sps * steps * res_factor + _EST_OVERHEAD_S))
+    seconds_per_image = max(1, seconds_per_image)
+    total_seconds = seconds_per_image * n
+
+    note = (f"With your compute ({device_name}), ~{seconds_per_image}s per image "
+            f"(~{total_seconds}s total).")
+
+    return {
+        "device": device,
+        "device_name": device_name,
+        "steps": steps,
+        "seconds_per_image": seconds_per_image,
+        "total_seconds": total_seconds,
+        "calibrated": bool(calibrated),
+        "note": note,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Heavy bootstrap: model download/link + worker thread (mirrors launch.py tail)
 # ---------------------------------------------------------------------------
@@ -814,6 +974,27 @@ def start_generation(body):
     args, seed = build_async_task_args(body)
     task = worker.AsyncTask(args=args)
     task_id = uuid.uuid4().hex
+
+    # Stamp the task for time-estimate self-calibration. get_progress() reads these
+    # back when the task finishes to update the per-device seconds-per-step EMA.
+    # Steps are derived the SAME way /api/estimate does (override wins, else map
+    # performance -> steps), and multiplied by image_number for the run total.
+    try:
+        so = body.get("steps_override")
+        try:
+            so = int(so)
+        except (TypeError, ValueError):
+            so = -1
+        est_steps = so if so > 0 else _perf_to_steps(body.get("performance"))
+        try:
+            n = max(1, int(body.get("image_number", 1)))
+        except (TypeError, ValueError):
+            n = 1
+        task._est_started = time.time()
+        task._est_steps = int(est_steps) * n
+    except Exception:
+        pass
+
     with _TASKS_LOCK:
         _TASKS[task_id] = task
     # Reset the global interrupt flag the same way webui.generate_clicked does.
@@ -933,6 +1114,18 @@ def get_progress(task_id):
         else:
             state = "done"
             message = message or "Finished"
+            # Self-calibrate the time estimate from this real run. measured =
+            # elapsed / total_steps gives seconds-per-step for the active device;
+            # _record_measured_sps folds it into the EMA (ignoring outliers).
+            try:
+                started = getattr(task, "_est_started", None)
+                est_steps = getattr(task, "_est_steps", None)
+                if started and est_steps and est_steps > 0:
+                    elapsed = time.time() - started
+                    if elapsed > 0:
+                        _record_measured_sps(detect_device(), elapsed / est_steps)
+            except Exception:
+                pass
         with _TASKS_LOCK:
             _TASKS.pop(task_id, None)
         result = {"state": state, "progress": 100, "preview": preview,
@@ -1009,7 +1202,24 @@ def create_app():
 
     @app.get("/api/health")
     def health():
-        return {"status": "ok", "version": get_version(), "device": detect_device()}
+        device = detect_device()
+        return {"status": "ok", "version": get_version(),
+                "device": device, "device_name": detect_device_name(device)}
+
+    @app.get("/api/estimate")
+    def estimate(performance: str = "Speed", image_number: int = 1,
+                 aspect_ratio: str = "1024*1024", steps_override: int = -1):
+        """Predict generation time. See estimate_generation() / the JSON-shape
+        comment near the baselines for the returned fields."""
+        try:
+            return estimate_generation(
+                performance=performance,
+                image_number=image_number,
+                aspect_ratio=aspect_ratio,
+                steps_override=steps_override,
+            )
+        except Exception as e:
+            return JSONResponse(status_code=500, content={"error": str(e)})
 
     @app.get("/api/options")
     def options():

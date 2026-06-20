@@ -273,36 +273,16 @@ foreach (Lang::SUPPORTED as $code) {
         <button class="btn danger" id="btn-stop" disabled data-i18n="btn.stop"><?= htmlspecialchars($t('btn.stop', 'Stop'), ENT_QUOTES) ?></button>
       </div>
 
-      <!-- Performance (collapsed by default) -->
-      <div class="card">
-        <details class="collapsible" id="performance-section">
-          <summary data-i18n="field.performance"><?= htmlspecialchars($t('field.performance', 'Performance'), ENT_QUOTES) ?></summary>
-          <div class="card-body">
-            <div class="seg" id="performance" role="radiogroup" data-i18n-aria-label="field.performance" aria-label="<?= htmlspecialchars($t('field.performance', 'Performance'), ENT_QUOTES) ?>"></div>
-          </div>
-        </details>
-      </div>
+      <!-- Live generation time estimate — informational only, shown under the
+           Generate/Stop/Skip buttons in both Simple and Advanced. Filled and
+           toggled by app.js (refreshEstimate); hidden when the engine can't be
+           reached so it never surfaces an error. -->
+      <div class="time-estimate hidden" id="time-estimate" role="status" aria-live="polite"></div>
 
-      <!-- Setting basics -->
-      <div class="card">
-        <div class="card-body">
-          <div style="margin-top:4px">
-            <span class="field-label"><span data-i18n="field.aspect_ratio"><?= htmlspecialchars($t('field.aspect_ratio', 'Aspect ratio'), ENT_QUOTES) ?></span></span>
-            <select id="aspect_ratio" data-i18n-aria-label="field.aspect_ratio" aria-label="<?= htmlspecialchars($t('field.aspect_ratio', 'Aspect ratio'), ENT_QUOTES) ?>"></select>
-          </div>
-
-          <div class="row cols-2" style="margin-top:14px">
-            <label class="field"><span class="field-label"><span data-i18n="field.image_number"><?= htmlspecialchars($t('field.image_number', 'Image number'), ENT_QUOTES) ?></span><span class="val" data-out="image_number">1</span></span>
-              <input type="range" id="image_number" min="1" max="32" step="1" value="1">
-            </label>
-            <div>
-              <span class="field-label"><span data-i18n="field.seed"><?= htmlspecialchars($t('field.seed', 'Seed'), ENT_QUOTES) ?></span></span>
-              <label class="check" style="margin-bottom:6px"><input type="checkbox" id="seed_random" checked> <span data-i18n="field.seed.random"><?= htmlspecialchars($t('field.seed.random', 'Random'), ENT_QUOTES) ?></span></label>
-              <input type="number" id="seed" value="-1" disabled>
-            </div>
-          </div>
-        </div>
-      </div>
+      <!-- NOTE: Performance, Aspect ratio, Image number and Seed used to live here
+           in the left column. They were moved into the Settings modal (see
+           #settings-modal below). The same control ids are preserved so app.js
+           (applyOptions / loadPreset / gatherParams) keeps working unchanged. -->
 
       <!-- Styles — text-to-image only. Visibility is toggled by app.js based on
            the effective active input mode: shown for Text to Image (always the
@@ -426,16 +406,45 @@ foreach (Lang::SUPPORTED as $code) {
   <div class="lightbox" id="lightbox"><span class="close" id="lightbox-close" data-i18n-title="lightbox.close" title="<?= htmlspecialchars($t('lightbox.close', 'Close'), ENT_QUOTES) ?>">×</span><img id="lightbox-img" data-i18n-alt="lightbox.alt" alt="<?= htmlspecialchars($t('lightbox.alt', 'Full image'), ENT_QUOTES) ?>"></div>
 
   <!-- Settings modal — separate element/handlers from the image lightbox above.
-       Opened by the gear button (#btn-settings); holds general settings (currently
-       Output format, moved here from the basics card; the same #output_format id is
-       still populated from /api/options by app.js). -->
+       Opened by the gear button (#btn-settings). Holds the generation settings that
+       used to live in the left column: Performance, Aspect ratio, Image number, Seed
+       and Output format. The SAME control ids are kept here so app.js
+       (applyOptions / loadPreset / gatherParams) still populates and reads them; only
+       their location changed (the DOM nodes were moved, not recreated). -->
   <div class="modal" id="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" aria-hidden="true">
-    <div class="modal-dialog" id="settings-dialog" tabindex="-1">
+    <div class="modal-dialog settings-dialog-wide" id="settings-dialog" tabindex="-1">
       <div class="modal-head">
         <h2 class="modal-title" id="settings-title" data-i18n="settings.title"><?= htmlspecialchars($t('settings.title', 'Settings'), ENT_QUOTES) ?></h2>
         <button type="button" class="modal-close" id="settings-close" data-i18n-aria-label="lightbox.close" data-i18n-title="lightbox.close" title="<?= htmlspecialchars($t('lightbox.close', 'Close'), ENT_QUOTES) ?>" aria-label="<?= htmlspecialchars($t('lightbox.close', 'Close'), ENT_QUOTES) ?>">✕</button>
       </div>
       <div class="modal-body">
+        <div class="settings-section-title" data-i18n="settings.generation"><?= htmlspecialchars($t('settings.generation', 'Generation'), ENT_QUOTES) ?></div>
+
+        <!-- Performance — was a collapsible #performance-section in the left column;
+             now a normal labeled control. The #performance segmented host is kept. -->
+        <div class="field">
+          <span class="field-label"><span data-i18n="field.performance"><?= htmlspecialchars($t('field.performance', 'Performance'), ENT_QUOTES) ?></span></span>
+          <div class="seg" id="performance" role="radiogroup" data-i18n-aria-label="field.performance" aria-label="<?= htmlspecialchars($t('field.performance', 'Performance'), ENT_QUOTES) ?>"></div>
+        </div>
+
+        <!-- Aspect ratio -->
+        <label class="field"><span class="lbl" data-i18n="field.aspect_ratio"><?= htmlspecialchars($t('field.aspect_ratio', 'Aspect ratio'), ENT_QUOTES) ?></span>
+          <select id="aspect_ratio" data-i18n-aria-label="field.aspect_ratio" aria-label="<?= htmlspecialchars($t('field.aspect_ratio', 'Aspect ratio'), ENT_QUOTES) ?>"></select>
+        </label>
+
+        <!-- Image number -->
+        <label class="field"><span class="field-label"><span data-i18n="field.image_number"><?= htmlspecialchars($t('field.image_number', 'Image number'), ENT_QUOTES) ?></span><span class="val" data-out="image_number">1</span></span>
+          <input type="range" id="image_number" min="1" max="32" step="1" value="1">
+        </label>
+
+        <!-- Seed -->
+        <div class="field">
+          <span class="field-label"><span data-i18n="field.seed"><?= htmlspecialchars($t('field.seed', 'Seed'), ENT_QUOTES) ?></span></span>
+          <label class="check" style="margin-bottom:6px"><input type="checkbox" id="seed_random" checked> <span data-i18n="field.seed.random"><?= htmlspecialchars($t('field.seed.random', 'Random'), ENT_QUOTES) ?></span></label>
+          <input type="number" id="seed" value="-1" disabled>
+        </div>
+
+        <!-- Output format -->
         <label class="field"><span class="lbl" data-i18n="field.output_format"><?= htmlspecialchars($t('field.output_format', 'Output format'), ENT_QUOTES) ?></span>
           <select id="output_format"></select>
         </label>
