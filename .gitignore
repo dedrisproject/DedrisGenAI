@@ -53,3 +53,33 @@ user_path_config-deprecated.txt
 /.coverage*
 /auth.json
 .DS_Store
+
+# --- DedrisGenAI structure ---
+# Generated outputs
+/engine/outputs/
+/engine/outputs
+/outputs/
+# Engine local config / caches
+/engine/config.txt
+/engine/config_modification_tutorial.txt
+/engine/user_path_config.txt
+/engine/auth.json
+# Provisioned portable runtimes (auto-downloaded on first launch, never committed)
+/runtimes/python/
+/runtimes/php/bin/
+/runtimes/php/*/php
+/runtimes/php/*/php.exe
+/runtimes/cache/
+# Model weights live here but are covered by the *.safetensors/*.bin/*.pth rules above
+/engine/models/**/*.safetensors
+/engine/models/**/*.bin
+/engine/models/**/*.pth
+/engine/models/**/*.ckpt
+/engine/models/**/*.pt
+# PHP UI runtime artifacts
+/webui/runtime/
+/webui/*.log
+
+# macOS AppleDouble (external/exFAT volumes)
+._*
+**/._*

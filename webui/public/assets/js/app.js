@@ -924,6 +924,9 @@
     // load the default preset (Standard)
     await loadPreset(state.activePreset);
 
+    // Reconnect to a generation that was running before a page refresh.
+    await recoverTask();
+
     // keep an eye on the engine; back off polling after it is up
     setInterval(() => { if (!state.generating) checkHealth(false); }, 15000);
   }

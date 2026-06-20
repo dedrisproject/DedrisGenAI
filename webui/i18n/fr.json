@@ -1,45 +1,38 @@
 {
   "_meta.name": "Français",
   "_meta.dir": "ltr",
-
   "app.tagline": "Studio d'images IA",
   "app.title": "DedrisGenAI — Studio d'images IA",
-
   "mode.label": "Interface",
   "mode.simple": "Simple",
   "mode.advanced": "Avancée",
   "mode.simple.tip": "Afficher uniquement les commandes essentielles",
   "mode.advanced.tip": "Afficher toutes les commandes de modèles, avancées et d'image d'entrée",
-
   "lang.label": "Langue",
   "lang.tip": "Choisir la langue de l'interface",
-
   "preset.label": "Préréglage",
   "preset.aria": "Préréglage du modèle",
-
   "engine.connecting": "connexion…",
   "engine.ready": "moteur prêt",
   "engine.starting": "démarrage du moteur…",
   "engine.offline": "moteur hors ligne",
   "engine.title": "État du moteur",
-
   "banner.engine.starting": "Le moteur de génération démarre — cela peut prendre une minute au premier lancement.",
   "banner.engine.unreachable": "Impossible de joindre le moteur de génération. Est-il en cours d'exécution ? Relancez le lanceur si le problème persiste.",
   "banner.engine.notreachable.generate": "Le moteur est injoignable. Assurez-vous qu'il a fini de démarrer, puis réessayez.",
   "banner.options.limited": "Un ensemble limité d'options a été chargé — le moteur n'a pas renvoyé sa configuration complète.",
   "banner.preset.failed": "Impossible de charger le préréglage « {name} » depuis le moteur. Les réglages actuels sont conservés.",
   "banner.contact.lost": "Contact avec le moteur perdu pendant la génération. Nouvelle tentative…",
-
+  "banner.task.resumed": "Reconnecté à la génération en cours après le rechargement de la page.",
+  "banner.task.lost": "La génération précédente n'est plus disponible (le moteur a peut-être redémarré).",
   "field.prompt": "Invite positive",
   "field.prompt.ph": "Décrivez ce que vous voulez voir…",
   "field.negative": "Invite négative",
   "field.negative.ph": "Ce qu'il faut éviter (facultatif)…",
-
   "btn.generate": "Générer",
   "btn.generating": "Génération…",
   "btn.skip": "Passer",
   "btn.stop": "Arrêter",
-
   "tab.text": "Texte vers image",
   "tab.uov": "Agrandir / Varier",
   "tab.ip": "Invite par image",
@@ -47,9 +40,7 @@
   "tab.describe": "Décrire",
   "tab.enhance": "Améliorer",
   "tab.metadata": "Métadonnées",
-
   "panel.text.desc": "Génération purement texte vers image à partir de l'invite et des réglages de cette page. Changez d'onglet pour fournir une image d'entrée.",
-
   "uov.mode": "Mode",
   "uov.disabled": "Désactivé",
   "uov.vary.subtle": "Varier (subtil)",
@@ -59,46 +50,38 @@
   "uov.up.fast2": "Agrandir (rapide 2x)",
   "uov.drop": "Déposez ou cliquez pour téléverser une image à agrandir / varier",
   "uov.note": "Connecté lorsque le moteur exposera l'entrée agrandir / varier. D'ici là, non bloquant.",
-
   "ip.drop": "Déposez ou cliquez pour téléverser une image de référence",
   "ip.type": "Type",
   "ip.weight": "Poids",
   "ip.note": "Connecté lorsque le moteur exposera l'entrée d'invite par image.",
-
   "inpaint.drop": "Déposez ou cliquez pour téléverser l'image à modifier",
   "inpaint.mode": "Mode inpaint",
   "inpaint.mode.default": "Inpaint ou Outpaint (par défaut)",
   "inpaint.mode.detail": "Améliorer le détail (visage, main, yeux, etc.)",
   "inpaint.mode.content": "Modifier le contenu (ajouter des objets, changer l'arrière-plan, etc.)",
   "inpaint.note": "Connecté lorsque le moteur exposera l'entrée inpaint.",
-
   "describe.drop": "Déposez ou cliquez pour téléverser une image à décrire",
   "describe.type": "Type de contenu",
   "describe.type.photo": "Photographie",
   "describe.type.art": "Art/Anime",
   "describe.btn": "Décrire l'image",
   "describe.note": "Connecté lorsque le moteur exposera le point de terminaison de description.",
-
   "enhance.enable": "Activer la passe d'amélioration",
   "enhance.note": "Ajoute une passe d'amélioration des détails aux images générées. Connecté lorsque le moteur l'exposera.",
-
   "metadata.drop": "Déposez ou cliquez pour téléverser une image et lire ses métadonnées de génération",
   "metadata.note": "Lit les métadonnées DedrisGenAI / A1111 intégrées à une image. Connecté lorsque le moteur l'exposera.",
-
   "field.performance": "Performance",
   "field.output_format": "Format de sortie",
   "field.aspect_ratio": "Format d'image",
   "field.image_number": "Nombre d'images",
   "field.seed": "Graine",
   "field.seed.random": "Aléatoire",
-
   "section.styles": "Styles",
   "styles.search.ph": "Rechercher des styles…",
   "styles.selected": "sélectionné(s)",
   "styles.clear": "Tout effacer",
   "styles.empty": "Aucun style ne correspond à votre recherche.",
   "styles.preview.alt": "Aperçu du style {name}",
-
   "section.models": "Modèles",
   "field.base_model": "Modèle de base (checkpoint)",
   "field.refiner": "Refiner",
@@ -107,7 +90,6 @@
   "models.no_checkpoints": "(aucun checkpoint trouvé)",
   "models.vae.default": "Par défaut (modèle)",
   "section.loras": "LoRA",
-
   "section.advanced": "Avancé",
   "field.guidance_scale": "Échelle de guidage (CFG)",
   "field.sharpness": "Netteté de l'image",
@@ -118,14 +100,12 @@
   "field.vae": "VAE",
   "field.clip_skip": "CLIP skip",
   "field.weight": "Poids",
-
   "section.results": "Résultats",
   "results.placeholder": "Vos images générées apparaîtront ici.",
   "results.preview.alt": "Aperçu en direct",
   "results.firstrun": "Note du premier lancement : la toute première génération télécharge et charge le modèle et peut prendre plusieurs minutes. Les générations suivantes sont bien plus rapides.",
   "results.elapsed": "Écoulé",
   "results.done": "Terminé — {count} image(s)",
-
   "progress.waiting": "En attente…",
   "progress.submitting": "Envoi…",
   "progress.queued": "En file d'attente…",
@@ -143,10 +123,8 @@
   "progress.error.unknown": "erreur inconnue",
   "progress.failed": "Échec de la génération : {msg}",
   "progress.no_task": "Le moteur n'a renvoyé aucun task_id.",
-
   "lightbox.alt": "Image complète",
   "lightbox.close": "Fermer",
-
   "foot.text": "DedrisGenAI · Studio d'images IA · ",
   "foot.version": "v—"
 }

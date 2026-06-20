@@ -1,45 +1,38 @@
 {
   "_meta.name": "Deutsch",
   "_meta.dir": "ltr",
-
   "app.tagline": "KI-Bildstudio",
   "app.title": "DedrisGenAI — KI-Bildstudio",
-
   "mode.label": "Oberfläche",
   "mode.simple": "Einfach",
   "mode.advanced": "Erweitert",
   "mode.simple.tip": "Nur die wesentlichen Bedienelemente anzeigen",
   "mode.advanced.tip": "Alle Modell-, erweiterten und Bildeingabe-Steuerungen anzeigen",
-
   "lang.label": "Sprache",
   "lang.tip": "Sprache der Oberfläche wählen",
-
   "preset.label": "Voreinstellung",
   "preset.aria": "Modell-Voreinstellung",
-
   "engine.connecting": "Verbindung…",
   "engine.ready": "Engine bereit",
   "engine.starting": "Engine startet…",
   "engine.offline": "Engine offline",
   "engine.title": "Engine-Status",
-
   "banner.engine.starting": "Die Generierungs-Engine startet — beim ersten Start kann das eine Minute dauern.",
   "banner.engine.unreachable": "Die Generierungs-Engine ist nicht erreichbar. Läuft sie? Starte den Starter neu, falls das Problem bestehen bleibt.",
   "banner.engine.notreachable.generate": "Die Engine ist nicht erreichbar. Stelle sicher, dass sie fertig gestartet ist, und versuche es erneut.",
   "banner.options.limited": "Es wurde nur ein begrenzter Satz an Optionen geladen — die Engine hat ihre vollständige Konfiguration nicht zurückgegeben.",
   "banner.preset.failed": "Die Voreinstellung \"{name}\" konnte nicht aus der Engine geladen werden. Die aktuellen Einstellungen werden verwendet.",
   "banner.contact.lost": "Kontakt zur Engine während der Generierung verloren. Erneuter Versuch…",
-
+  "banner.task.resumed": "Mit der laufenden Generierung nach dem Neuladen der Seite wieder verbunden.",
+  "banner.task.lost": "Die vorherige Generierung ist nicht mehr verfügbar (die Engine wurde möglicherweise neu gestartet).",
   "field.prompt": "Positiver Prompt",
   "field.prompt.ph": "Beschreibe, was du sehen möchtest…",
   "field.negative": "Negativer Prompt",
   "field.negative.ph": "Was vermieden werden soll (optional)…",
-
   "btn.generate": "Generieren",
   "btn.generating": "Generiere…",
   "btn.skip": "Überspringen",
   "btn.stop": "Stopp",
-
   "tab.text": "Text zu Bild",
   "tab.uov": "Hochskalieren / Variieren",
   "tab.ip": "Bild-Prompt",
@@ -47,9 +40,7 @@
   "tab.describe": "Beschreiben",
   "tab.enhance": "Verbessern",
   "tab.metadata": "Metadaten",
-
   "panel.text.desc": "Reine Text-zu-Bild-Generierung mit dem Prompt und den Einstellungen auf dieser Seite. Wechsle die Registerkarte, um ein Eingabebild zu verwenden.",
-
   "uov.mode": "Modus",
   "uov.disabled": "Deaktiviert",
   "uov.vary.subtle": "Variieren (dezent)",
@@ -59,46 +50,38 @@
   "uov.up.fast2": "Hochskalieren (schnell 2x)",
   "uov.drop": "Bild zum Hochskalieren / Variieren ablegen oder klicken zum Hochladen",
   "uov.note": "Wird angebunden, sobald die Engine die Hochskalieren-/Variieren-Eingabe bereitstellt. Bis dahin nicht blockierend.",
-
   "ip.drop": "Referenzbild ablegen oder klicken zum Hochladen",
   "ip.type": "Typ",
   "ip.weight": "Gewichtung",
   "ip.note": "Wird angebunden, sobald die Engine die Bild-Prompt-Eingabe bereitstellt.",
-
   "inpaint.drop": "Zu bearbeitendes Bild ablegen oder klicken zum Hochladen",
   "inpaint.mode": "Inpaint-Modus",
   "inpaint.mode.default": "Inpaint oder Outpaint (Standard)",
   "inpaint.mode.detail": "Detail verbessern (Gesicht, Hand, Augen usw.)",
   "inpaint.mode.content": "Inhalt ändern (Objekte hinzufügen, Hintergrund ändern usw.)",
   "inpaint.note": "Wird angebunden, sobald die Engine die Inpaint-Eingabe bereitstellt.",
-
   "describe.drop": "Zu beschreibendes Bild ablegen oder klicken zum Hochladen",
   "describe.type": "Inhaltstyp",
   "describe.type.photo": "Fotografie",
   "describe.type.art": "Kunst/Anime",
   "describe.btn": "Bild beschreiben",
   "describe.note": "Wird angebunden, sobald die Engine den Beschreiben-Endpunkt bereitstellt.",
-
   "enhance.enable": "Verbesserungsdurchlauf aktivieren",
   "enhance.note": "Fügt den generierten Bildern einen Detailverbesserungs-Durchlauf hinzu. Wird angebunden, sobald die Engine dies bereitstellt.",
-
   "metadata.drop": "Bild ablegen oder klicken zum Hochladen, um seine Generierungs-Metadaten zu lesen",
   "metadata.note": "Liest in ein Bild eingebettete DedrisGenAI-/A1111-Metadaten. Wird angebunden, sobald die Engine dies bereitstellt.",
-
   "field.performance": "Leistung",
   "field.output_format": "Ausgabeformat",
   "field.aspect_ratio": "Seitenverhältnis",
   "field.image_number": "Anzahl Bilder",
   "field.seed": "Seed",
   "field.seed.random": "Zufällig",
-
   "section.styles": "Stile",
   "styles.search.ph": "Stile suchen…",
   "styles.selected": "ausgewählt",
   "styles.clear": "Alle löschen",
   "styles.empty": "Keine Stile passen zu deiner Suche.",
   "styles.preview.alt": "Vorschau des Stils {name}",
-
   "section.models": "Modelle",
   "field.base_model": "Basismodell (Checkpoint)",
   "field.refiner": "Refiner",
@@ -107,7 +90,6 @@
   "models.no_checkpoints": "(keine Checkpoints gefunden)",
   "models.vae.default": "Standard (Modell)",
   "section.loras": "LoRAs",
-
   "section.advanced": "Erweitert",
   "field.guidance_scale": "Guidance-Skala (CFG)",
   "field.sharpness": "Bildschärfe",
@@ -118,14 +100,12 @@
   "field.vae": "VAE",
   "field.clip_skip": "CLIP-Skip",
   "field.weight": "Gewichtung",
-
   "section.results": "Ergebnisse",
   "results.placeholder": "Deine generierten Bilder erscheinen hier.",
   "results.preview.alt": "Live-Vorschau",
   "results.firstrun": "Hinweis zum ersten Start: Die allererste Generierung lädt das Modell herunter und in den Speicher und kann mehrere Minuten dauern. Spätere Generierungen sind viel schneller.",
   "results.elapsed": "Vergangen",
   "results.done": "Fertig — {count} Bild(er)",
-
   "progress.waiting": "Warten…",
   "progress.submitting": "Wird übermittelt…",
   "progress.queued": "In Warteschlange…",
@@ -143,10 +123,8 @@
   "progress.error.unknown": "unbekannter Fehler",
   "progress.failed": "Generierung fehlgeschlagen: {msg}",
   "progress.no_task": "Die Engine hat keine task_id zurückgegeben.",
-
   "lightbox.alt": "Vollbild",
   "lightbox.close": "Schließen",
-
   "foot.text": "DedrisGenAI · KI-Bildstudio · ",
   "foot.version": "v—"
 }

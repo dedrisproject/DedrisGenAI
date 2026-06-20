@@ -1,45 +1,38 @@
 {
   "_meta.name": "Español",
   "_meta.dir": "ltr",
-
   "app.tagline": "Estudio de imágenes IA",
   "app.title": "DedrisGenAI — Estudio de imágenes IA",
-
   "mode.label": "Interfaz",
   "mode.simple": "Sencilla",
   "mode.advanced": "Avanzada",
   "mode.simple.tip": "Mostrar solo los controles esenciales",
   "mode.advanced.tip": "Mostrar todos los controles de modelos, avanzados y de imagen de entrada",
-
   "lang.label": "Idioma",
   "lang.tip": "Elige el idioma de la interfaz",
-
   "preset.label": "Preajuste",
   "preset.aria": "Preajuste del modelo",
-
   "engine.connecting": "conectando…",
   "engine.ready": "motor listo",
   "engine.starting": "iniciando el motor…",
   "engine.offline": "motor desconectado",
   "engine.title": "Estado del motor",
-
   "banner.engine.starting": "El motor de generación se está iniciando — en el primer arranque puede tardar un minuto.",
   "banner.engine.unreachable": "No se puede acceder al motor de generación. ¿Está en ejecución? Reinicia el iniciador si el problema persiste.",
   "banner.engine.notreachable.generate": "El motor no está accesible. Asegúrate de que haya terminado de iniciarse y vuelve a intentarlo.",
   "banner.options.limited": "Se cargó un conjunto limitado de opciones — el motor no devolvió su configuración completa.",
   "banner.preset.failed": "No se pudo cargar el preajuste «{name}» desde el motor. Se usan los ajustes actuales.",
   "banner.contact.lost": "Se perdió el contacto con el motor durante la generación. Reintentando…",
-
+  "banner.task.resumed": "Reconectado a la generación en curso tras recargar la página.",
+  "banner.task.lost": "La generación anterior ya no está disponible (es posible que el motor se haya reiniciado).",
   "field.prompt": "Indicación positiva",
   "field.prompt.ph": "Describe lo que quieres ver…",
   "field.negative": "Indicación negativa",
   "field.negative.ph": "Qué evitar (opcional)…",
-
   "btn.generate": "Generar",
   "btn.generating": "Generando…",
   "btn.skip": "Omitir",
   "btn.stop": "Detener",
-
   "tab.text": "Texto a imagen",
   "tab.uov": "Ampliar / Variar",
   "tab.ip": "Indicación por imagen",
@@ -47,9 +40,7 @@
   "tab.describe": "Describir",
   "tab.enhance": "Mejorar",
   "tab.metadata": "Metadatos",
-
   "panel.text.desc": "Generación de texto a imagen pura usando la indicación y los ajustes de esta página. Cambia de pestaña para aportar una imagen de entrada.",
-
   "uov.mode": "Modo",
   "uov.disabled": "Desactivado",
   "uov.vary.subtle": "Variar (sutil)",
@@ -59,46 +50,38 @@
   "uov.up.fast2": "Ampliar (rápido 2x)",
   "uov.drop": "Arrastra o haz clic para subir una imagen que ampliar / variar",
   "uov.note": "Se conectará cuando el motor exponga la entrada de ampliar / variar. Hasta entonces no es bloqueante.",
-
   "ip.drop": "Arrastra o haz clic para subir una imagen de referencia",
   "ip.type": "Tipo",
   "ip.weight": "Peso",
   "ip.note": "Se conectará cuando el motor exponga la entrada de indicación por imagen.",
-
   "inpaint.drop": "Arrastra o haz clic para subir la imagen que editar",
   "inpaint.mode": "Modo inpaint",
   "inpaint.mode.default": "Inpaint u Outpaint (predeterminado)",
   "inpaint.mode.detail": "Mejorar detalle (cara, mano, ojos, etc.)",
   "inpaint.mode.content": "Modificar contenido (añadir objetos, cambiar el fondo, etc.)",
   "inpaint.note": "Se conectará cuando el motor exponga la entrada de inpaint.",
-
   "describe.drop": "Arrastra o haz clic para subir una imagen que describir",
   "describe.type": "Tipo de contenido",
   "describe.type.photo": "Fotografía",
   "describe.type.art": "Arte/Anime",
   "describe.btn": "Describir imagen",
   "describe.note": "Se conectará cuando el motor exponga el endpoint de descripción.",
-
   "enhance.enable": "Activar pasada de mejora",
   "enhance.note": "Añade una pasada de mejora de detalles a las imágenes generadas. Se conectará cuando el motor lo exponga.",
-
   "metadata.drop": "Arrastra o haz clic para subir una imagen y leer sus metadatos de generación",
   "metadata.note": "Lee los metadatos DedrisGenAI / A1111 incrustados en una imagen. Se conectará cuando el motor lo exponga.",
-
   "field.performance": "Rendimiento",
   "field.output_format": "Formato de salida",
   "field.aspect_ratio": "Relación de aspecto",
   "field.image_number": "Número de imágenes",
   "field.seed": "Semilla",
   "field.seed.random": "Aleatoria",
-
   "section.styles": "Estilos",
   "styles.search.ph": "Buscar estilos…",
   "styles.selected": "seleccionados",
   "styles.clear": "Borrar todo",
   "styles.empty": "Ningún estilo coincide con tu búsqueda.",
   "styles.preview.alt": "Vista previa del estilo {name}",
-
   "section.models": "Modelos",
   "field.base_model": "Modelo base (checkpoint)",
   "field.refiner": "Refiner",
@@ -107,7 +90,6 @@
   "models.no_checkpoints": "(no se encontraron checkpoints)",
   "models.vae.default": "Predeterminado (modelo)",
   "section.loras": "LoRA",
-
   "section.advanced": "Avanzado",
   "field.guidance_scale": "Escala de guía (CFG)",
   "field.sharpness": "Nitidez de la imagen",
@@ -118,14 +100,12 @@
   "field.vae": "VAE",
   "field.clip_skip": "CLIP skip",
   "field.weight": "Peso",
-
   "section.results": "Resultados",
   "results.placeholder": "Tus imágenes generadas aparecerán aquí.",
   "results.preview.alt": "Vista previa en vivo",
   "results.firstrun": "Nota del primer arranque: la primera generación descarga y carga el modelo y puede tardar varios minutos. Las generaciones posteriores son mucho más rápidas.",
   "results.elapsed": "Transcurrido",
   "results.done": "Listo — {count} imagen(es)",
-
   "progress.waiting": "Esperando…",
   "progress.submitting": "Enviando…",
   "progress.queued": "En cola…",
@@ -143,10 +123,8 @@
   "progress.error.unknown": "error desconocido",
   "progress.failed": "Generación fallida: {msg}",
   "progress.no_task": "El motor no devolvió ningún task_id.",
-
   "lightbox.alt": "Imagen completa",
   "lightbox.close": "Cerrar",
-
   "foot.text": "DedrisGenAI · Estudio de imágenes IA · ",
   "foot.version": "v—"
 }
