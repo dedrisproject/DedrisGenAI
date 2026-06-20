@@ -68,8 +68,6 @@
   "inpaint.brush_size": "Pinselgröße",
   "inpaint.clear": "Maske löschen",
   "inpaint.erase": "Radierer",
-  "inpaint.prompt": "Inpaint-Prompt",
-  "inpaint.prompt.ph": "Was dort eingefügt werden soll (optional)…",
   "inpaint.paint_hint": "Male den zu regenerierenden Bereich aus, bevor du generierst.",
   "inpaint.canvas_hint": "Male den zu regenerierenden Bereich aus. Halte gedrückt und ziehe über das Bild.",
   "inpaint.note": "Male den zu regenerierenden Bereich aus, füge dann einen optionalen Prompt hinzu und generiere.",

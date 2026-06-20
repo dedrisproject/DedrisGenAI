@@ -68,8 +68,6 @@
   "inpaint.brush_size": "Taille du pinceau",
   "inpaint.clear": "Effacer le masque",
   "inpaint.erase": "Gomme",
-  "inpaint.prompt": "Invite inpaint",
-  "inpaint.prompt.ph": "Ce qu'il faut y mettre (facultatif)…",
   "inpaint.paint_hint": "Peignez la zone à régénérer avant de générer.",
   "inpaint.canvas_hint": "Peignez la zone à régénérer. Maintenez et faites glisser sur l'image.",
   "inpaint.note": "Peignez la région à régénérer, puis ajoutez une invite facultative et générez.",

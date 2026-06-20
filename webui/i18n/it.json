@@ -68,8 +68,6 @@
   "inpaint.brush_size": "Dimensione pennello",
   "inpaint.clear": "Cancella maschera",
   "inpaint.erase": "Gomma",
-  "inpaint.prompt": "Prompt inpaint",
-  "inpaint.prompt.ph": "Cosa mettere lì (facoltativo)…",
   "inpaint.paint_hint": "Dipingi l'area da rigenerare prima di generare.",
   "inpaint.canvas_hint": "Dipingi l'area da rigenerare. Tieni premuto e trascina sull'immagine.",
   "inpaint.note": "Dipingi la regione da rigenerare, poi aggiungi un prompt facoltativo e genera.",

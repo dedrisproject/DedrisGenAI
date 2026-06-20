@@ -1318,11 +1318,12 @@
     mctx.fillRect(0, 0, inpaint.natW, inpaint.natH);
     mctx.drawImage(inpaint.maskCanvas, 0, 0);
 
+    // NOTE: no inpaint-specific prompt — inpainting uses the MAIN positive prompt,
+    // which the engine already applies. There is exactly one prompt box in the UI.
     return {
       input_mode: 'inpaint',
       inpaint_image: src.toDataURL('image/png'),
       inpaint_mask: mask.toDataURL('image/png'),
-      inpaint_prompt: ($('#inpaint_prompt') ? $('#inpaint_prompt').value : ''),
     };
   }
 

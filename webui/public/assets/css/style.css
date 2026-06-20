@@ -114,6 +114,9 @@ a { color: var(--accent-2); }
 html.mode-simple .adv-only { display: none !important; }
 /* In simple mode the generate row drops the (hidden) Skip column. */
 html.mode-simple .gen-buttons { grid-template-columns: 2fr 1fr; }
+/* Simple mode collapses the order to: prompt → Generate (the tabs box between
+   them is adv-only and hidden), so pull the buttons up against the prompt card. */
+html.mode-simple .gen-buttons { margin-top: 16px; }
 
 .engine-pill {
   display: inline-flex;
@@ -209,6 +212,9 @@ html.mode-simple .gen-buttons { grid-template-columns: 2fr 1fr; }
   overflow: hidden;
 }
 .card + .card { margin-top: 16px; }
+/* The Generate row is a standalone element between cards; keep the card that
+   follows it spaced the same as a card-to-card gap. */
+.gen-buttons + .card { margin-top: 16px; }
 .card-body { padding: 16px; }
 
 .section-title {
@@ -352,7 +358,10 @@ input[type="range"]::-moz-range-thumb {
 .btn.lg      { padding: 13px 18px; font-size: 15px; }
 .btn.sm      { padding: 5px 12px; font-size: 12px; }
 
-.gen-buttons { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 10px; }
+/* Generate row. Now a standalone element placed directly below the main box
+   (the tabs card in Advanced, or the prompt card in Simple), so it owns its
+   own top margin instead of relying on card padding. */
+.gen-buttons { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 10px; margin-top: 16px; }
 
 /* ---------- Styles multi-select ---------- */
 
@@ -439,18 +448,35 @@ input[type="range"]::-moz-range-thumb {
 
 /* ---------- Tabs (image input) ---------- */
 
-.tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--border); padding: 0 8px; }
+/* The image-input tabs card is the prominent MAIN box in Advanced mode: a
+   slightly stronger frame and accent so it reads as the primary work surface,
+   with the Generate row sitting directly beneath it. */
+.input-tabs-card {
+  border-color: var(--border-2);
+  box-shadow: var(--shadow), inset 0 0 0 1px rgba(124, 92, 255, .08);
+}
+
+.tabs {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  border-bottom: 1px solid var(--border);
+  padding: 0 8px;
+  background: var(--bg-2);
+}
 .tab {
   appearance: none; border: none; background: transparent;
   color: var(--text-dim); cursor: pointer;
-  padding: 11px 14px; font-size: 13px; font-weight: 600;
+  padding: 13px 16px; font-size: 13.5px; font-weight: 600;
   border-bottom: 2px solid transparent;
-  transition: color .12s, border-color .12s;
+  transition: color .12s, border-color .12s, background .12s;
 }
 .tab:hover { color: var(--text); }
-.tab.active { color: #fff; border-bottom-color: var(--accent-2); }
+.tab.active {
+  color: #fff;
+  border-bottom-color: var(--accent-2);
+  background: var(--panel-2);
+}
 .tab .badge { font-size: 10px; color: var(--text-mute); margin-left: 5px; }
-.tabpanel { display: none; padding: 16px; }
+.tabpanel { display: none; padding: 18px 16px; min-height: 120px; }
 .tabpanel.active { display: block; }
 
 .dropzone {

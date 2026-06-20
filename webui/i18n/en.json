@@ -68,8 +68,6 @@
   "inpaint.brush_size": "Brush size",
   "inpaint.clear": "Clear mask",
   "inpaint.erase": "Eraser",
-  "inpaint.prompt": "Inpaint prompt",
-  "inpaint.prompt.ph": "What to put there (optional)…",
   "inpaint.paint_hint": "Paint over the area you want to regenerate before generating.",
   "inpaint.canvas_hint": "Paint the area to regenerate. Hold and drag over the image.",
   "inpaint.note": "Paint the region to regenerate, then add an optional prompt and Generate.",

@@ -68,8 +68,6 @@
   "inpaint.brush_size": "Tamaño del pincel",
   "inpaint.clear": "Borrar máscara",
   "inpaint.erase": "Borrador",
-  "inpaint.prompt": "Indicación de inpaint",
-  "inpaint.prompt.ph": "Qué poner ahí (opcional)…",
   "inpaint.paint_hint": "Pinta el área que quieres regenerar antes de generar.",
   "inpaint.canvas_hint": "Pinta el área que regenerar. Mantén pulsado y arrastra sobre la imagen.",
   "inpaint.note": "Pinta la región que regenerar, luego añade una indicación opcional y genera.",

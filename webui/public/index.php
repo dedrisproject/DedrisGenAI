@@ -143,17 +143,11 @@ foreach (Lang::SUPPORTED as $code) {
             <span class="lbl" data-i18n="field.negative"><?= htmlspecialchars($t('field.negative', 'Negative prompt'), ENT_QUOTES) ?></span>
             <textarea id="negative_prompt" class="neg-area" data-i18n-placeholder="field.negative.ph" placeholder="<?= htmlspecialchars($t('field.negative.ph', ''), ENT_QUOTES) ?>"></textarea>
           </label>
-
-          <div class="gen-buttons">
-            <button class="btn primary lg" id="btn-generate"><span class="ico">✨</span><span class="txt" data-i18n="btn.generate"><?= htmlspecialchars($t('btn.generate', 'Generate'), ENT_QUOTES) ?></span></button>
-            <button class="btn ghost adv-only" id="btn-skip" disabled data-i18n="btn.skip"><?= htmlspecialchars($t('btn.skip', 'Skip'), ENT_QUOTES) ?></button>
-            <button class="btn danger" id="btn-stop" disabled data-i18n="btn.stop"><?= htmlspecialchars($t('btn.stop', 'Stop'), ENT_QUOTES) ?></button>
-          </div>
         </div>
       </div>
 
-      <!-- Image-input tabs (advanced only) -->
-      <div class="card adv-only">
+      <!-- Image-input tabs (advanced only) — the prominent MAIN box -->
+      <div class="card adv-only input-tabs-card">
         <div class="tabs" id="input-tabs" role="tablist">
           <button class="tab active" data-tab="text"     role="tab" data-i18n="tab.text"><?= htmlspecialchars($t('tab.text', 'Text to Image'), ENT_QUOTES) ?></button>
           <button class="tab" data-tab="uov"      role="tab" data-i18n="tab.uov"><?= htmlspecialchars($t('tab.uov', 'Upscale / Vary'), ENT_QUOTES) ?></button>
@@ -226,10 +220,6 @@ foreach (Lang::SUPPORTED as $code) {
                 <button type="button" class="btn ghost sm" id="inpaint-clear-btn" data-i18n="inpaint.clear"><?= htmlspecialchars($t('inpaint.clear', 'Clear mask'), ENT_QUOTES) ?></button>
               </div>
             </div>
-
-            <label class="field" style="margin-top:12px"><span class="lbl" data-i18n="inpaint.prompt"><?= htmlspecialchars($t('inpaint.prompt', 'Inpaint prompt'), ENT_QUOTES) ?></span>
-              <textarea id="inpaint_prompt" class="neg-area" data-i18n-placeholder="inpaint.prompt.ph" placeholder="<?= htmlspecialchars($t('inpaint.prompt.ph', ''), ENT_QUOTES) ?>"></textarea>
-            </label>
           </div>
 
           <label class="field" style="margin-top:12px"><span class="lbl" data-i18n="inpaint.mode"><?= htmlspecialchars($t('inpaint.mode', 'Inpaint mode'), ENT_QUOTES) ?></span>
@@ -266,6 +256,15 @@ foreach (Lang::SUPPORTED as $code) {
           <pre id="metadata_out" class="status" style="display:none;background:var(--bg-2);border:1px solid var(--border);border-radius:8px;padding:12px;white-space:pre-wrap;font-family:var(--mono);font-size:12px;margin-top:12px"></pre>
           <p class="note" data-i18n="metadata.note"><?= htmlspecialchars($t('metadata.note', ''), ENT_QUOTES) ?></p>
         </div>
+      </div>
+
+      <!-- Generate / Stop / Skip — directly below the main (tabs) box.
+           Always visible (NOT adv-only): in Simple mode the tabs box above is
+           hidden, so the order collapses to prompt → Generate. -->
+      <div class="gen-buttons">
+        <button class="btn primary lg" id="btn-generate"><span class="ico">✨</span><span class="txt" data-i18n="btn.generate"><?= htmlspecialchars($t('btn.generate', 'Generate'), ENT_QUOTES) ?></span></button>
+        <button class="btn ghost adv-only" id="btn-skip" disabled data-i18n="btn.skip"><?= htmlspecialchars($t('btn.skip', 'Skip'), ENT_QUOTES) ?></button>
+        <button class="btn danger" id="btn-stop" disabled data-i18n="btn.stop"><?= htmlspecialchars($t('btn.stop', 'Stop'), ENT_QUOTES) ?></button>
       </div>
 
       <!-- Performance (collapsed by default) -->
