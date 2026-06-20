@@ -140,6 +140,13 @@ if (strpos($path, '/styles/') === 0 || $path === '/styles') {
     return dedris_dispatch_styles($apiDir, $path);
 }
 
+// 2c) Examples / Demo page — allow the extension-less /demo to reach demo.php.
+//     (demo.php itself is a real file and is served by the static branch below.)
+if ($path === '/demo' || $path === '/demo/') {
+    require $publicDir . '/demo.php';
+    return true;
+}
+
 // 3) Static assets — let the built-in server stream them as-is.
 //    Returning false tells `php -S` to serve the requested file directly.
 $requested = realpath($publicDir . $path);

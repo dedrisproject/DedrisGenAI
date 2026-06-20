@@ -73,6 +73,7 @@
   const LS_TASK = 'dedris.task';   // in-flight task id, so a page refresh can reconnect
   const LS_RESULTS = 'dedris.results'; // accumulated result URLs, survive a refresh
   const LS_PERF = 'dedris.perf_open'; // Performance collapsible open/closed state
+  const LS_PENDING_STYLE = 'dedris.pendingStyle'; // style chosen on the demo page to preselect
   const RESULTS_CAP = 200;         // cap the persisted/in-memory feed length
 
   const i18n = {
@@ -485,6 +486,32 @@
     renderStyles($('#style-search').value);
   }
 
+  // Demo page hand-off: the Examples gallery saves a chosen style name to
+  // localStorage (dedris.pendingStyle), then navigates here. On boot we read it,
+  // switch to a Text-to-Image view (where Styles live), preselect that style, and
+  // clear the key so it only applies once. ?style= is also honoured as a fallback.
+  function applyPendingStyle() {
+    let name = null;
+    try {
+      const qs = new URLSearchParams(window.location.search);
+      name = qs.get('style');
+    } catch (_) { /* ignore */ }
+    if (!name) {
+      try { name = localStorage.getItem(LS_PENDING_STYLE); } catch (_) {}
+    }
+    try { localStorage.removeItem(LS_PENDING_STYLE); } catch (_) {}
+    if (!name) return;
+    // Only preselect a style the engine actually knows about (avoids dead chips).
+    const known = state.styles.some((s) => s.name === name);
+    if (!known) return;
+    // Styles live in Text-to-Image. In Advanced, make sure the Text tab is active
+    // (Simple already shows styles and behaves as Text-to-Image).
+    if (state.mode === 'advanced') selectTab('text');
+    state.selectedStyles.add(name);
+    renderStyles($('#style-search') ? $('#style-search').value : '');
+    updateStylesVisibility();
+  }
+
   // The Styles picker belongs to Text-to-Image only. It is visible whenever the
   // effective input mode is text-to-image, and hidden when Inpaint is active.
   // In Simple mode the (advanced-only) input tabs are hidden and the flow is
@@ -495,7 +522,8 @@
     if (!card) return;
     // In Simple mode the tabs box is hidden; treat the mode as text-to-image.
     const effectiveTab = (state.mode === 'simple') ? 'text' : state.activeTab;
-    const showStyles = (effectiveTab !== 'inpaint');
+    // Styles belong to Text-to-Image only; hide them for Edit Image and Create variants.
+    const showStyles = (effectiveTab !== 'inpaint' && effectiveTab !== 'uov');
     card.classList.toggle('hidden', !showStyles);
   }
 
@@ -515,6 +543,9 @@
     } else if (state.activeTab === 'inpaint') {
       // Advanced + Inpaint: inside the inpaint panel, above the mask editor.
       mount = $('#prompt-mount-inpaint');
+    } else if (state.activeTab === 'uov') {
+      // Advanced + Create variants: inside the uov panel.
+      mount = $('#prompt-mount-uov');
     } else {
       // Advanced + Text to Image: inside the text-to-image panel.
       mount = $('#prompt-mount-text');
@@ -945,6 +976,18 @@
       inpaintExtra = inpaintPayload();
     }
 
+    // Create variants (uov) tab: an image is required. Block with a localized hint
+    // if nothing was uploaded, otherwise send the source image + vary method.
+    let uovExtra = null;
+    if (state.activeTab === 'uov') {
+      if (!uovHasImage()) {
+        showBannerKey('warn', 'uov.need_image', null, false);
+        setTimeout(hideBanner, 4000);
+        return;
+      }
+      uovExtra = uovPayload();
+    }
+
     setGenerating(true);
     startTimers();
     setIndeterminate(true);                 // start animated immediately
@@ -954,6 +997,7 @@
     try {
       const params = gatherParams();
       if (inpaintExtra) Object.assign(params, inpaintExtra);
+      if (uovExtra) Object.assign(params, uovExtra);
       const res = await apiPost('generate', params);
       state.taskId = res && (res.task_id || res.id);
       if (!state.taskId) throw new Error(t('progress.no_task'));
@@ -1140,22 +1184,25 @@
   }
 
   // ---------------------------------------------------------------- tabs
-  // Only two input modes are wired and rendered: Text to Image and Inpaint.
+  // Three input modes are wired and rendered: Text to Image, Edit Image (inpaint)
+  // and Create variants (uov).
+  function selectTab(name) {
+    const tab = $(`#input-tabs .tab[data-tab="${name}"]`);
+    if (!tab) return;
+    $$('#input-tabs .tab').forEach((t2) => t2.classList.remove('active'));
+    $$('.tabpanel').forEach((p) => p.classList.remove('active'));
+    tab.classList.add('active');
+    state.activeTab = name;
+    const panel = $(`.tabpanel[data-panel="${name}"]`);
+    if (panel) panel.classList.add('active');
+    // Move the single prompt-host into the now-active tab's mount point.
+    placePrompt();
+    // Styles belong to text-to-image only; hide them on Edit Image / Create variants.
+    updateStylesVisibility();
+  }
   function bindTabs() {
     $$('#input-tabs .tab').forEach((tab) => {
-      tab.addEventListener('click', () => {
-        $$('#input-tabs .tab').forEach((t2) => t2.classList.remove('active'));
-        $$('.tabpanel').forEach((p) => p.classList.remove('active'));
-        tab.classList.add('active');
-        const name = tab.dataset.tab;
-        state.activeTab = name;
-        const panel = $(`.tabpanel[data-panel="${name}"]`);
-        if (panel) panel.classList.add('active');
-        // Move the single prompt-host into the now-active tab's mount point.
-        placePrompt();
-        // Styles belong to text-to-image only; hide them when Inpaint is active.
-        updateStylesVisibility();
-      });
+      tab.addEventListener('click', () => selectTab(tab.dataset.tab));
     });
   }
 
@@ -1419,6 +1466,75 @@
   // re-localize anything in the inpaint editor that isn't a plain data-i18n node
   function refreshInpaintI18n() { /* brush-size value + tool labels are static/data-i18n */ }
 
+  // ---------------------------------------------------------------- create variants (uov)
+  // Load a source image and, on Generate, send it back to the engine in "uov"
+  // (Upscale/Vary) mode with a Vary (Subtle|Strong) method so the engine produces
+  // variations of the uploaded image using the main positive/negative prompt.
+  const uov = {
+    img: null,            // HTMLImageElement (the loaded source)
+    natW: 0, natH: 0,     // native pixel dimensions
+  };
+
+  function bindUov() {
+    const dz = $('#uov-dropzone');
+    const file = $('#uov-file');
+    if (dz && file) {
+      dz.addEventListener('click', () => file.click());
+      dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('drag'); });
+      dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+      dz.addEventListener('drop', (e) => {
+        e.preventDefault(); dz.classList.remove('drag');
+        const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f) loadUovFile(f);
+      });
+      file.addEventListener('change', () => { if (file.files[0]) loadUovFile(file.files[0]); });
+    }
+  }
+
+  function loadUovFile(file) {
+    if (!file || !/^image\//.test(file.type)) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => setupUovImage(img);
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function setupUovImage(img) {
+    uov.img = img;
+    uov.natW = img.naturalWidth || img.width;
+    uov.natH = img.naturalHeight || img.height;
+    if (!uov.natW || !uov.natH) { uov.img = null; return; }
+
+    const preview = $('#uov-preview');
+    const previewImg = $('#uov-preview-img');
+    const dz = $('#uov-dropzone');
+    if (previewImg) { previewImg.src = img.src; previewImg.alt = ''; }
+    if (preview) preview.classList.remove('hidden');
+    if (dz) dz.classList.add('hidden');
+  }
+
+  function uovHasImage() { return !!uov.img; }
+
+  // Build the generate payload pieces for "Create variants" at native resolution.
+  // Uses the MAIN positive/negative prompt, which the engine already applies.
+  function uovPayload() {
+    if (!uov.img) return null;
+    // re-encode the source image at native resolution so the engine gets clean bytes
+    const src = document.createElement('canvas');
+    src.width = uov.natW; src.height = uov.natH;
+    src.getContext('2d').drawImage(uov.img, 0, 0, uov.natW, uov.natH);
+    const strengthSel = $('#uov-strength');
+    const strong = strengthSel && strengthSel.value === 'strong';
+    return {
+      input_mode: 'uov',
+      uov_image: src.toDataURL('image/png'),
+      uov_method: strong ? 'Vary (Strong)' : 'Vary (Subtle)',
+    };
+  }
+
   // ---------------------------------------------------------------- range / input bindings
   function bindControls() {
     bindRange('image_number', (v) => String(parseInt(v)));
@@ -1478,6 +1594,7 @@
     bindTabs();
     bindDropzones();
     bindInpaint();
+    bindUov();
     // Place the single prompt-host into the correct mount for the booted mode/tab.
     placePrompt();
     // Set initial Styles visibility for the current mode / active tab.
@@ -1503,6 +1620,11 @@
 
     // load the default preset (Standard)
     await loadPreset(state.activePreset);
+
+    // Demo page hand-off: preselect a style chosen on the Examples gallery. Run
+    // AFTER loadPreset (which may set its own styles) so the chosen style wins,
+    // and after options so the style exists in state.styles.
+    applyPendingStyle();
 
     // Reconnect to a generation that was running before a page refresh.
     await recoverTask();

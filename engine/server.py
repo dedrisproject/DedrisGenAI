@@ -545,16 +545,30 @@ def build_async_task_args(body):
         args.append(name)
         args.append(weight)
 
-    # image-input controls. Inpaint: the UI sends the source image + a brushed
-    # mask (white = region to regenerate) as base64 data URLs; we decode them into
-    # the {'image','mask'} dict Fooocus' worker expects and switch to the inpaint tab.
+    # image-input controls. Two modes are wired:
+    #  - "inpaint": source image + brushed mask (white = region to regenerate).
+    #  - "uov" (Upscale/Vary, used for "create variants from image"): a source image
+    #    + a uov_method like "Vary (Subtle)" / "Vary (Strong)" / "Upscale (...)".
+    # The UI sends the image(s) as base64 data URLs; we decode them into what the
+    # worker expects and switch to the matching tab.
+    mode = str(body.get("input_mode", ""))
     inpaint_img = None
     inpaint_msk = None
-    if str(body.get("input_mode", "")) == "inpaint":
+    uov_img = None
+    uov_method = config.default_uov_method
+
+    if mode == "inpaint":
         inpaint_img = _data_url_to_np(body.get("inpaint_image"), "RGB")
         if inpaint_img is not None:
             inpaint_msk = _data_url_to_np(body.get("inpaint_mask"), "RGB")
+    elif mode in ("uov", "variants", "vary", "upscale"):
+        uov_img = _data_url_to_np(body.get("uov_image") or body.get("image"), "RGB")
+        if uov_img is not None:
+            m = str(body.get("uov_method") or "").strip()
+            uov_method = m if m in set(flags.uov_list) else flags.subtle_variation
+
     do_inpaint = inpaint_img is not None
+    do_uov = uov_img is not None
     if do_inpaint:
         # The worker reads inpaint_input_image['mask'][:, :, 0], so the mask must be a
         # HxWx3 array matching the image. Synthesize/resize defensively.
@@ -569,10 +583,10 @@ def build_async_task_args(body):
             except Exception:
                 inpaint_msk = np.zeros_like(inpaint_img)
 
-    args.append(bool(do_inpaint))                       # input_image_checkbox
+    args.append(bool(do_inpaint or do_uov))            # input_image_checkbox
     args.append("inpaint" if do_inpaint else "uov")     # current_tab
-    args.append(config.default_uov_method)              # uov_method
-    args.append(None)                                   # uov_input_image
+    args.append(uov_method if do_uov else config.default_uov_method)  # uov_method
+    args.append(uov_img if do_uov else None)            # uov_input_image
     args.append([])                                     # outpaint_selections
     args.append({"image": inpaint_img, "mask": inpaint_msk} if do_inpaint else None)  # inpaint_input_image
     args.append(str(body.get("inpaint_prompt", "") or ""))  # inpaint_additional_prompt

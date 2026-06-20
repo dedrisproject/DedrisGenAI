@@ -104,6 +104,12 @@ foreach (Lang::SUPPORTED as $code) {
       </select>
     </div>
 
+    <!-- Examples / Demo page link — opens the standalone style gallery. -->
+    <a class="icon-btn nav-demo" id="nav-demo" href="demo.php"
+       data-i18n-title="nav.demo" data-i18n-aria-label="nav.demo"
+       title="<?= htmlspecialchars($t('nav.demo', 'Examples'), ENT_QUOTES) ?>"
+       aria-label="<?= htmlspecialchars($t('nav.demo', 'Examples'), ENT_QUOTES) ?>"><span aria-hidden="true">🖼️</span><span class="nav-demo-txt hidden-sm" data-i18n="nav.demo"><?= htmlspecialchars($t('nav.demo', 'Examples'), ENT_QUOTES) ?></span></a>
+
     <!-- Settings (gear) button — opens the Settings modal, sits next to the language selector. -->
     <button type="button" class="icon-btn" id="btn-settings"
             data-i18n-aria-label="settings.label" data-i18n-title="settings.label"
@@ -173,6 +179,7 @@ foreach (Lang::SUPPORTED as $code) {
         <div class="tabs" id="input-tabs" role="tablist">
           <button class="tab active" data-tab="text"     role="tab" data-i18n="tab.text"><?= htmlspecialchars($t('tab.text', 'Text to Image'), ENT_QUOTES) ?></button>
           <button class="tab" data-tab="inpaint"  role="tab" data-i18n="tab.inpaint"><?= htmlspecialchars($t('tab.inpaint', 'Edit Image'), ENT_QUOTES) ?></button>
+          <button class="tab" data-tab="uov"      role="tab" data-i18n="tab.uov"><?= htmlspecialchars($t('tab.uov', 'Create variants'), ENT_QUOTES) ?></button>
         </div>
 
         <!-- Text to image (default) -->
@@ -226,6 +233,34 @@ foreach (Lang::SUPPORTED as $code) {
             </select>
           </label>
           <p class="note" data-i18n="inpaint.note"><?= htmlspecialchars($t('inpaint.note', ''), ENT_QUOTES) ?></p>
+        </div>
+
+        <!-- Create variants (uov) -->
+        <div class="tabpanel" data-panel="uov">
+          <div class="tab-intro">
+            <h3 data-i18n="tab.uov"><?= htmlspecialchars($t('tab.uov', 'Create variants'), ENT_QUOTES) ?></h3>
+            <p class="note" data-i18n="uov.intro"><?= htmlspecialchars($t('uov.intro', 'Upload an image, set the prompt, choose how strongly to vary it, then press Generate to get fresh variations of your image.'), ENT_QUOTES) ?></p>
+          </div>
+
+          <!-- Advanced + Create variants mount point: the shared prompt-host is
+               moved in here so prompt + negative appear within this tab. -->
+          <div id="prompt-mount-uov" class="prompt-mount"></div>
+
+          <!-- upload / drop zone for the source image (hidden once an image is loaded) -->
+          <div class="dropzone" id="uov-dropzone"><div class="icon">🖼️</div><div data-i18n="uov.upload"><?= htmlspecialchars($t('uov.upload', 'Drop or click to upload the source image'), ENT_QUOTES) ?></div></div>
+          <input type="file" accept="image/*" class="hidden" id="uov-file">
+
+          <!-- source image preview (shown once loaded) -->
+          <div class="uov-preview hidden" id="uov-preview">
+            <img id="uov-preview-img" alt="">
+          </div>
+
+          <label class="field" style="margin-top:12px"><span class="lbl" data-i18n="uov.strength"><?= htmlspecialchars($t('uov.strength', 'Variation strength'), ENT_QUOTES) ?></span>
+            <select id="uov-strength">
+              <option value="subtle" data-i18n="uov.subtle"><?= htmlspecialchars($t('uov.subtle', 'Subtle'), ENT_QUOTES) ?></option>
+              <option value="strong" data-i18n="uov.strong"><?= htmlspecialchars($t('uov.strong', 'Strong'), ENT_QUOTES) ?></option>
+            </select>
+          </label>
         </div>
       </div>
 
