@@ -475,8 +475,16 @@ def build_async_task_args(body):
     args.append(style_selections)
     # 4
     args.append(str(pick("performance", config.default_performance)))
-    # 5
-    args.append(str(pick("aspect_ratio", config.default_aspect_ratio)))
+    # 5 aspect ratio — the worker expects the Gradio label format "W×H ..."
+    # (see config.add_ratio / async_worker width,height parsing). The API/presets
+    # carry the raw "W*H" form, so normalize it here.
+    _ar = str(pick("aspect_ratio", config.default_aspect_ratio))
+    if "×" not in _ar:
+        try:
+            _ar = config.add_ratio(_ar)
+        except Exception:
+            pass
+    args.append(_ar)
     # 6
     args.append(int(pick("image_number", config.default_image_number)))
     # 7
