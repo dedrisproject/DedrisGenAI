@@ -313,6 +313,29 @@ foreach (Lang::SUPPORTED as $code) {
 
             <div class="section-title" style="margin-top:8px" data-i18n="section.loras"><?= htmlspecialchars($t('section.loras', 'LoRAs'), ENT_QUOTES) ?></div>
             <div id="lora-rows"><!-- 5 rows injected by JS --></div>
+
+            <!-- Add LoRA from URL — downloads a CivitAI/direct .safetensors URL into
+                 the engine's loras folder (POST api/add_lora, polled via
+                 api/lora_status), then refreshes the LoRA selectors above so the new
+                 LoRA is immediately selectable. All ids are read by app.js. -->
+            <div class="lora-add" id="lora-add">
+              <div class="section-title" style="margin-top:14px" data-i18n="lora.add.title"><?= htmlspecialchars($t('lora.add.title', 'Add LoRA from URL'), ENT_QUOTES) ?></div>
+              <label class="field" style="margin-bottom:8px">
+                <input type="url" id="lora-url" class="lora-add-url" data-i18n-placeholder="lora.add.url.ph" placeholder="<?= htmlspecialchars($t('lora.add.url.ph', 'CivitAI or direct .safetensors URL'), ENT_QUOTES) ?>">
+              </label>
+              <label class="field" style="margin-bottom:4px">
+                <input type="password" id="lora-token" class="lora-add-token" autocomplete="off" data-i18n-placeholder="lora.add.token.ph" placeholder="<?= htmlspecialchars($t('lora.add.token.ph', 'CivitAI token (optional)'), ENT_QUOTES) ?>">
+                <span class="help" data-i18n="lora.add.token.hint"><?= htmlspecialchars($t('lora.add.token.hint', 'needed for some models'), ENT_QUOTES) ?></span>
+              </label>
+              <div class="lora-add-actions">
+                <button type="button" class="btn primary sm" id="lora-add-btn" data-i18n="lora.add.button"><?= htmlspecialchars($t('lora.add.button', 'Add LoRA'), ENT_QUOTES) ?></button>
+              </div>
+              <!-- progress / status line, filled by app.js while downloading -->
+              <div class="lora-add-progress hidden" id="lora-add-progress" role="status" aria-live="polite">
+                <div class="lora-add-msg" id="lora-add-msg"></div>
+                <div class="lora-add-track" id="lora-add-track"><div class="lora-add-fill" id="lora-add-fill"></div></div>
+              </div>
+            </div>
           </div>
         </details>
       </div>

@@ -45,6 +45,8 @@ Endpoints (all JSON, see docs/ARCHITECTURE.md):
     POST /api/generate
     GET  /api/progress?task_id=ID
     POST /api/stop
+    POST /api/add_lora        (download a LoRA .safetensors from a URL)
+    GET  /api/lora_status     (byte progress of the add-LoRA download)
     GET  /outputs/<path>
 """
 
@@ -1010,7 +1012,7 @@ def _download_file_with_progress(url, dest_path, st):
     # urllib agent; harmless for Hugging Face / generic CDNs.
     req = urllib.request.Request(url, headers={"User-Agent": "DedrisGenAI/engine"})
     try:
-        with urllib.request.urlopen(req) as resp:
+        with urllib.request.urlopen(req, timeout=60) as resp:
             cl = resp.headers.get("Content-Length")
             try:
                 total_bytes = int(cl) if cl is not None else 0
@@ -1077,6 +1079,249 @@ def _run_preset_download(label, missing, st):
         st["message"] = "Model download failed: " + (last[-1] if last else "unknown error")
     finally:
         st["event"].set()
+
+
+# ---------------------------------------------------------------------------
+# Add-LoRA-from-URL: background download of a single .safetensors into the
+# engine's primary loras folder, then make it selectable via /api/options.
+# ---------------------------------------------------------------------------
+#
+# A single module-global status drives the whole feature (only one add-LoRA
+# download runs at a time). The JSON returned by BOTH /api/add_lora and
+# /api/lora_status is this exact shape:
+#
+#   {
+#     "state":            str  — "idle" | "downloading" | "ready" | "error"
+#     "message":          str  — human-readable status line
+#     "file":             str|None — filename currently being written (".part"
+#                                    target without the suffix), or None
+#     "downloaded_bytes": int  — bytes streamed so far for the file in flight
+#     "total_bytes":      int  — Content-Length of the file (0 if unknown)
+#     "lora_name":        str|None — the saved filename once state == "ready",
+#                                    else None. This is the value the UI passes
+#                                    back as a lora row name; it now appears in
+#                                    /api/options -> models.loras after the
+#                                    config.update_files() refresh below.
+#   }
+_LORA_DL = {"state": "idle", "message": "", "file": None,
+            "downloaded_bytes": 0, "total_bytes": 0, "lora_name": None}
+_LORA_DL_LOCK = threading.Lock()
+
+
+def _lora_status_snapshot():
+    """Thread-safe copy of the public _LORA_DL status dict (the shape above)."""
+    with _LORA_DL_LOCK:
+        return {"state": _LORA_DL.get("state", "idle"),
+                "message": _LORA_DL.get("message", ""),
+                "file": _LORA_DL.get("file"),
+                "downloaded_bytes": int(_LORA_DL.get("downloaded_bytes", 0) or 0),
+                "total_bytes": int(_LORA_DL.get("total_bytes", 0) or 0),
+                "lora_name": _LORA_DL.get("lora_name")}
+
+
+def _sanitize_lora_filename(name):
+    """Reduce an arbitrary header/URL-derived name to a safe basename ending in
+    ``.safetensors`` (CivitAI LoRAs are safetensors). Strips any path separators
+    so a malicious Content-Disposition can't escape the loras folder."""
+    name = os.path.basename(str(name or "").strip().strip('"').strip("'"))
+    name = name.replace("\\", "").replace("/", "")
+    # Drop anything that looks like a query string left on a URL-derived name.
+    name = name.split("?", 1)[0].split("#", 1)[0].strip()
+    if not name:
+        name = ""
+    if not name.lower().endswith(".safetensors"):
+        # Keep an existing stem if present, else fall back; always end in .safetensors.
+        stem = os.path.splitext(name)[0] if name else ""
+        name = (stem or "lora") + ".safetensors"
+    return name
+
+
+def _resolve_lora_request_url(url, token):
+    """Return ``url`` with the CivitAI API token appended as a query param when a
+    token is supplied (CivitAI accepts ``?token=<API_KEY>``; use ``&`` when the
+    url already carries a ``?``). No-op when no token is given."""
+    if not token:
+        return url
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}token={token}"
+
+
+def _filename_from_content_disposition(value):
+    """Extract ``filename`` from a Content-Disposition header value, or None.
+    Handles both ``filename="x"`` and RFC 5987 ``filename*=UTF-8''x`` forms."""
+    if not value:
+        return None
+    try:
+        parts = [p.strip() for p in str(value).split(";")]
+        # Prefer the extended filename* form if present.
+        for p in parts:
+            low = p.lower()
+            if low.startswith("filename*="):
+                raw = p.split("=", 1)[1].strip()
+                # filename*=UTF-8''actual%20name.safetensors
+                if "''" in raw:
+                    raw = raw.split("''", 1)[1]
+                import urllib.parse
+                return urllib.parse.unquote(raw)
+        for p in parts:
+            low = p.lower()
+            if low.startswith("filename="):
+                return p.split("=", 1)[1].strip().strip('"').strip("'")
+    except Exception:
+        pass
+    return None
+
+
+def _run_lora_download(url, token):
+    """Background worker: download a LoRA .safetensors from ``url`` into the
+    primary loras folder, updating _LORA_DL with byte progress, then refresh
+    config.lora_filenames so the new file is selectable. Never crashes the
+    server: any failure lands as state="error" with a clear message."""
+    import urllib.request
+    import urllib.error
+    import hashlib
+
+    tmp_path = None
+    try:
+        bootstrap()
+        loras_dir = config.paths_loras[0]
+        os.makedirs(loras_dir, exist_ok=True)
+
+        request_url = _resolve_lora_request_url(url, token)
+        # Browser-like UA: some hosts (and CivitAI) reject the default urllib agent.
+        req = urllib.request.Request(request_url, headers={
+            "User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                           "AppleWebKit/537.36 (KHTML, like Gecko) "
+                           "Chrome/120.0 Safari/537.36"),
+            "Accept": "*/*",
+        })
+
+        try:
+            resp = urllib.request.urlopen(req, timeout=60)
+        except urllib.error.HTTPError as he:
+            if he.code in (401, 403):
+                raise RuntimeError(
+                    "This model requires a CivitAI API token (or the token is "
+                    "invalid).")
+            raise RuntimeError(f"Download failed (HTTP {he.code}).")
+
+        with resp:
+            content_type = (resp.headers.get("Content-Type") or "").lower()
+            # An HTML body is almost always a login / error page, not a model.
+            if "text/html" in content_type:
+                raise RuntimeError(
+                    "This model requires a CivitAI API token (or the token is "
+                    "invalid).")
+
+            # Filename resolution: Content-Disposition wins (CivitAI sets it),
+            # then the URL path, then a short-hash fallback.
+            filename = _filename_from_content_disposition(
+                resp.headers.get("Content-Disposition"))
+            if not filename:
+                try:
+                    import urllib.parse
+                    path = urllib.parse.urlparse(url).path
+                    cand = os.path.basename(path)
+                    if cand:
+                        filename = cand
+                except Exception:
+                    filename = None
+            if not filename:
+                short = hashlib.sha1(url.encode("utf-8")).hexdigest()[:10]
+                filename = f"lora_{short}.safetensors"
+            filename = _sanitize_lora_filename(filename)
+
+            dest_path = os.path.join(loras_dir, filename)
+            tmp_path = dest_path + ".part"
+
+            cl = resp.headers.get("Content-Length")
+            try:
+                total_bytes = int(cl) if cl is not None else 0
+            except (TypeError, ValueError):
+                total_bytes = 0
+
+            with _LORA_DL_LOCK:
+                _LORA_DL["file"] = filename
+                _LORA_DL["downloaded_bytes"] = 0
+                _LORA_DL["total_bytes"] = total_bytes
+                _LORA_DL["message"] = f"Downloading {filename} …"
+
+            downloaded = 0
+            since_flush = 0
+            with open(tmp_path, "wb") as out:
+                while True:
+                    chunk = resp.read(_DL_CHUNK)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    downloaded += len(chunk)
+                    since_flush += len(chunk)
+                    if since_flush >= _DL_PROGRESS_FLUSH:
+                        with _LORA_DL_LOCK:
+                            _LORA_DL["downloaded_bytes"] = downloaded
+                        since_flush = 0
+            with _LORA_DL_LOCK:
+                _LORA_DL["downloaded_bytes"] = downloaded
+                _LORA_DL["total_bytes"] = total_bytes or downloaded
+
+        # A suspiciously tiny non-safetensors body is an auth/error page, not a
+        # model. Real CivitAI LoRAs are tens-to-hundreds of MB.
+        if downloaded < 16 * 1024:
+            raise RuntimeError(
+                "This model requires a CivitAI API token (or the token is "
+                "invalid).")
+
+        # Atomic publish so a partial write never appears as the real file.
+        os.replace(tmp_path, dest_path)
+        tmp_path = None
+
+        # Refresh the file lists so config.lora_filenames now includes the file;
+        # /api/options reads it live, so the LoRA is immediately selectable.
+        try:
+            config.update_files()
+        except Exception as e:
+            print(f"[DedrisGenAI] lora list refresh skipped: {e}")
+
+        with _LORA_DL_LOCK:
+            _LORA_DL["state"] = "ready"
+            _LORA_DL["lora_name"] = filename
+            _LORA_DL["message"] = f"Added {filename}"
+    except Exception as e:
+        # Clean up the partial file; never let the thread crash the server.
+        try:
+            if tmp_path and os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except Exception:
+            pass
+        with _LORA_DL_LOCK:
+            _LORA_DL["state"] = "error"
+            _LORA_DL["message"] = str(e) or "LoRA download failed"
+            _LORA_DL["lora_name"] = None
+
+
+def add_lora_from_url(url, token=None):
+    """Start (or report) a background LoRA download. Returns the _LORA_DL status
+    snapshot (shape documented above). If a download is already in progress the
+    current status is returned without starting a second one."""
+    url = (url or "").strip() if isinstance(url, str) else ""
+    if not url:
+        raise ValueError("url is required")
+
+    with _LORA_DL_LOCK:
+        if _LORA_DL.get("state") == "downloading":
+            # Already running — report it, don't start a duplicate.
+            return {"state": "downloading", "message": _LORA_DL.get("message", ""),
+                    "file": _LORA_DL.get("file"),
+                    "downloaded_bytes": int(_LORA_DL.get("downloaded_bytes", 0) or 0),
+                    "total_bytes": int(_LORA_DL.get("total_bytes", 0) or 0),
+                    "lora_name": _LORA_DL.get("lora_name")}
+        # Reset to a fresh downloading state.
+        _LORA_DL.update({"state": "downloading", "message": "Starting download …",
+                         "file": None, "downloaded_bytes": 0, "total_bytes": 0,
+                         "lora_name": None})
+
+    threading.Thread(target=_run_lora_download, args=(url, token), daemon=True).start()
+    return _lora_status_snapshot()
 
 
 def _wait_then_queue(task, label):
@@ -1433,6 +1678,49 @@ def create_app():
                 "done": 0, "total": len(missing),
                 "file": None, "file_index": 0, "file_count": len(missing),
                 "downloaded_bytes": 0, "total_bytes": 0}
+
+    @app.post("/api/add_lora")
+    async def add_lora(request: Request):
+        """Download a LoRA .safetensors from a URL (CivitAI or direct) into the
+        engine's loras folder, then make it selectable.
+
+        Request body:  { "url": str, "token": str|None }
+        Response JSON (same shape as /api/lora_status):
+          {
+            "state":            "idle" | "downloading" | "ready" | "error",
+            "message":          str,
+            "file":             str|None,   # filename in flight
+            "downloaded_bytes": int,
+            "total_bytes":      int,
+            "lora_name":        str|None    # saved filename once "ready"
+          }
+        A token, when given, is appended to CivitAI URLs as ?token=<API_KEY>.
+        If a download is already running, the current status is returned (no
+        second download is started)."""
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        if not isinstance(body, dict):
+            return JSONResponse(status_code=400, content={"error": "body must be a JSON object"})
+        url = body.get("url")
+        token = body.get("token")
+        try:
+            return add_lora_from_url(url, token)
+        except ValueError as e:
+            return JSONResponse(status_code=400, content={"error": str(e)})
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return JSONResponse(status_code=500, content={"error": str(e)})
+
+    @app.get("/api/lora_status")
+    def lora_status():
+        """Current add-LoRA download status (same JSON shape as /api/add_lora)."""
+        try:
+            return _lora_status_snapshot()
+        except Exception as e:
+            return JSONResponse(status_code=500, content={"error": str(e)})
 
     @app.get("/outputs/{path:path}")
     def outputs(path: str):

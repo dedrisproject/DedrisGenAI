@@ -724,6 +724,214 @@
     });
   }
 
+  // Repopulate every LoRA-name <select> with a fresh `loras` list, PRESERVING each
+  // row's current selection. Used after a new LoRA finishes downloading so it is
+  // immediately selectable without rebuilding the rows (which would drop weights,
+  // enabled flags and selections). If a row's current value is no longer in the
+  // list (it shouldn't normally be) we keep it as an extra option so nothing is
+  // silently lost.
+  function setLoraSelectOptions(loras) {
+    const list = (loras && loras.length) ? loras : ['None'];
+    $$('.lora-name').forEach((sel) => {
+      const cur = sel.value;
+      sel.innerHTML = '';
+      list.forEach((name) => sel.append(el('option', { value: name }, String(name))));
+      if (cur && !list.some((n) => n === cur)) sel.append(el('option', { value: cur }, cur));
+      if (cur) sel.value = cur;
+    });
+  }
+
+  // Re-fetch /api/options and refresh the LoRA selectors in place, keeping every
+  // row's current selection. Optionally auto-select `selectName` in the first row
+  // that is currently empty/None, for convenience after adding a LoRA. Returns the
+  // refreshed loras list (or null if options could not be loaded).
+  async function refreshLoraOptions(selectName) {
+    let opts;
+    try {
+      opts = await apiGet('options');
+    } catch (e) {
+      return null;
+    }
+    state.options = opts || state.options;
+    const models = (opts && opts.models) || (state.options && state.options.models) || FALLBACK.models;
+    const loras = (models.loras && models.loras.length) ? models.loras : ['None'];
+    setLoraSelectOptions(loras);
+    // Auto-select the freshly added LoRA in the first empty/None row.
+    if (selectName && loras.some((n) => n === selectName)) {
+      const rows = $$('#lora-rows .lora-row');
+      const target = rows.find((row) => {
+        const v = $('.lora-name', row).value;
+        return !v || v === 'None';
+      });
+      if (target) {
+        const sel = $('.lora-name', target);
+        sel.value = selectName;
+        const enabled = $('.lora-enabled', target);
+        if (enabled) enabled.checked = true;
+      }
+    }
+    return loras;
+  }
+
+  // ---------------------------------------------------------------- add LoRA from URL
+  // Downloads a CivitAI/direct .safetensors URL into the engine's loras folder via
+  // POST api/add_lora, then polls GET api/lora_status (~1.2s) showing a small
+  // progress line. On "ready" it refreshes the LoRA selectors so the new LoRA is
+  // usable immediately; on "error" it shows the engine's message and re-enables
+  // the button. The same payload shape the engine returns is reused:
+  //   { state, message, file, downloaded_bytes, total_bytes, lora_name }
+  const loraAdd = {
+    btn: null, url: null, token: null,
+    progress: null, msg: null, track: null, fill: null,
+    pollTimer: null, busy: false,
+  };
+
+  function loraAddSetBusy(on) {
+    loraAdd.busy = on;
+    if (loraAdd.btn) loraAdd.btn.disabled = on;
+    if (loraAdd.url) loraAdd.url.disabled = on;
+    if (loraAdd.token) loraAdd.token.disabled = on;
+  }
+
+  function loraAddShowProgress(show) {
+    if (loraAdd.progress) loraAdd.progress.classList.toggle('hidden', !show);
+  }
+
+  function loraAddSetMsg(text, kind) {
+    if (!loraAdd.msg) return;
+    loraAdd.msg.textContent = text || '';
+    loraAdd.msg.className = 'lora-add-msg' + (kind ? ' ' + kind : '');
+  }
+
+  // Update the small bar from a status payload: determinate when total_bytes>0,
+  // otherwise indeterminate. Returns nothing.
+  function loraAddRenderBar(data) {
+    const d = data || {};
+    const downloaded = Number(d.downloaded_bytes);
+    const total = Number(d.total_bytes);
+    const hasTotal = Number.isFinite(total) && total > 0;
+    const hasDownloaded = Number.isFinite(downloaded) && downloaded >= 0;
+    if (!loraAdd.track || !loraAdd.fill) return;
+    if (hasTotal && hasDownloaded) {
+      const pct = Math.max(0, Math.min(100, (downloaded / total) * 100));
+      loraAdd.track.classList.add('determinate');
+      loraAdd.fill.classList.add('determinate');
+      loraAdd.fill.style.width = pct + '%';
+    } else {
+      loraAdd.track.classList.remove('determinate');
+      loraAdd.fill.classList.remove('determinate');
+      loraAdd.fill.style.width = '';
+    }
+  }
+
+  function loraAddStopPolling() {
+    if (loraAdd.pollTimer) { clearTimeout(loraAdd.pollTimer); loraAdd.pollTimer = null; }
+  }
+
+  // Render a downloading status line: file name + "<downloaded> / <total>".
+  function loraAddDownloadingText(data) {
+    const d = data || {};
+    const file = (typeof d.file === 'string' && d.file.trim()) ? d.file.trim()
+               : (typeof d.lora_name === 'string' && d.lora_name.trim()) ? d.lora_name.trim() : '';
+    const downloaded = Number(d.downloaded_bytes);
+    const total = Number(d.total_bytes);
+    let size = '';
+    if (Number.isFinite(total) && total > 0 && Number.isFinite(downloaded) && downloaded >= 0) {
+      size = t('model.size', { downloaded: formatBytes(downloaded), total: formatBytes(total) });
+    }
+    let line = t('lora.add.downloading');
+    if (file) line += ' · ' + file;
+    if (size) line += ' · ' + size;
+    return line;
+  }
+
+  function loraAddHandleStatus(data) {
+    const st = data && (data.state || data.status);
+    if (st === 'downloading') {
+      loraAddSetMsg(loraAddDownloadingText(data));
+      loraAddRenderBar(data);
+      loraAddSchedulePoll();
+    } else if (st === 'ready') {
+      loraAddStopPolling();
+      loraAddRenderBar({ downloaded_bytes: 1, total_bytes: 1 });   // full bar
+      const name = (data && typeof data.lora_name === 'string' && data.lora_name.trim()) ? data.lora_name.trim() : '';
+      loraAddSetMsg(t('lora.add.done', { name }), 'ok');
+      // Refresh the LoRA selectors so the new LoRA is immediately usable.
+      refreshLoraOptions(name);
+      // Clear the inputs and re-enable for another add.
+      if (loraAdd.url) loraAdd.url.value = '';
+      loraAddSetBusy(false);
+    } else if (st === 'error') {
+      loraAddStopPolling();
+      const detail = (data && typeof data.message === 'string' && data.message.trim()) ? data.message.trim() : t('progress.error.unknown');
+      loraAddSetMsg(t('lora.add.error', { msg: detail }), 'err');
+      loraAddRenderBar(null);
+      loraAddSetBusy(false);
+    } else {
+      // idle / unknown: nothing in flight — stop quietly and re-enable.
+      loraAddStopPolling();
+      loraAddSetBusy(false);
+    }
+  }
+
+  function loraAddSchedulePoll() {
+    loraAddStopPolling();
+    loraAdd.pollTimer = setTimeout(async () => {
+      let data;
+      try {
+        data = await apiGet('lora_status');
+      } catch (e) {
+        // Transient (engine busy/unreachable): keep the bar, retry next tick.
+        loraAddSchedulePoll();
+        return;
+      }
+      loraAddHandleStatus(data);
+    }, 1200);
+  }
+
+  async function onAddLora() {
+    if (loraAdd.busy) return;
+    const url = (loraAdd.url && loraAdd.url.value || '').trim();
+    const token = (loraAdd.token && loraAdd.token.value || '').trim();
+    if (!url) {
+      loraAddShowProgress(true);
+      loraAddRenderBar(null);
+      loraAddSetMsg(t('lora.add.needurl'), 'err');
+      if (loraAdd.url && typeof loraAdd.url.focus === 'function') { try { loraAdd.url.focus(); } catch (_) {} }
+      return;
+    }
+    loraAddSetBusy(true);
+    loraAddShowProgress(true);
+    loraAddRenderBar(null);
+    loraAddSetMsg(t('lora.add.downloading'));
+    const body = { url };
+    if (token) body.token = token;   // token omitted/empty allowed
+    let data;
+    try {
+      data = await apiPost('add_lora', body);
+    } catch (e) {
+      const detail = (e && e.message) ? e.message : t('progress.error.unknown');
+      loraAddSetMsg(t('lora.add.error', { msg: detail }), 'err');
+      loraAddRenderBar(null);
+      loraAddSetBusy(false);
+      return;
+    }
+    loraAddHandleStatus(data);
+  }
+
+  function bindAddLora() {
+    loraAdd.btn = $('#lora-add-btn');
+    loraAdd.url = $('#lora-url');
+    loraAdd.token = $('#lora-token');
+    loraAdd.progress = $('#lora-add-progress');
+    loraAdd.msg = $('#lora-add-msg');
+    loraAdd.track = $('#lora-add-track');
+    loraAdd.fill = $('#lora-add-fill');
+    if (loraAdd.btn) loraAdd.btn.addEventListener('click', onAddLora);
+    // Enter in the URL field triggers the add.
+    if (loraAdd.url) loraAdd.url.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); onAddLora(); } });
+  }
+
   // ---------------------------------------------------------------- range output bindings
   function bindRange(id, fmt) {
     const r = document.getElementById(id);
@@ -1982,6 +2190,7 @@
     initPerformanceSection();
     initModelsAccordion();
     buildLoraRows();
+    bindAddLora();
     bindControls();
     bindTabs();
     bindDropzones();

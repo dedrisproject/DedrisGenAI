@@ -483,6 +483,48 @@ input[type="range"]::-moz-range-thumb {
 .lora-row .lw { display: flex; flex-direction: column; }
 .lora-row .lw .field-label { margin-bottom: 2px; }
 
+/* ---------- Add LoRA from URL ---------- */
+
+.lora-add {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.lora-add .field { margin-bottom: 8px; }
+.lora-add-url,
+.lora-add-token { width: 100%; }
+.lora-add-actions { display: flex; gap: 8px; margin-top: 4px; }
+.lora-add-progress {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+.lora-add-progress.hidden { display: none !important; }
+.lora-add-msg {
+  color: var(--text-dim);
+  word-break: break-word;
+}
+.lora-add-msg.ok { color: var(--good); }
+.lora-add-msg.err { color: var(--bad); }
+.lora-add-track {
+  height: 6px; border-radius: 999px; margin-top: 8px;
+  background: rgba(0,0,0,.3); overflow: hidden;
+}
+.lora-add-fill {
+  height: 100%; width: 40%;
+  background: var(--grad);
+  animation: indeterminate 1.25s ease-in-out infinite;
+}
+.lora-add-track.determinate .lora-add-fill,
+.lora-add-fill.determinate {
+  animation: none;
+  width: 0%;
+  transition: width .3s ease;
+}
+
 /* ---------- Tabs (image input) ---------- */
 
 /* The image-input tabs card is the prominent MAIN box in Advanced mode: a
