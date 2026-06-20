@@ -462,6 +462,8 @@ foreach (Lang::SUPPORTED as $code) {
                  LoRA is immediately selectable. All ids are read by app.js. -->
             <div class="lora-add" id="lora-add">
               <div class="section-title" style="margin-top:14px" data-i18n="lora.add.title"><?= htmlspecialchars($t('lora.add.title', 'Add LoRA from URL'), ENT_QUOTES) ?></div>
+              <p class="note" data-i18n="lora.what"><?= htmlspecialchars($t('lora.what', 'A LoRA is a small add-on that teaches the model a specific style, character, or concept. Add one or more on top of the base model to steer the look. Use SDXL-family LoRAs (SDXL 1.0 / Pony / Illustrious / NoobAI) — SD 1.5 LoRAs are not compatible with this engine.'), ENT_QUOTES) ?></p>
+              <p class="note"><a class="lora-find" href="https://civitai.com/models?types=LORA&amp;baseModels=SDXL%201.0&amp;baseModels=Pony&amp;baseModels=Illustrious&amp;baseModels=NoobAI&amp;sort=Most%20Downloaded" target="_blank" rel="noopener" data-i18n="lora.find"><?= htmlspecialchars($t('lora.find', 'Find compatible LoRAs on CivitAI ↗'), ENT_QUOTES) ?></a></p>
               <label class="field" style="margin-bottom:8px">
                 <input type="url" id="lora-url" class="lora-add-url" data-i18n-placeholder="lora.add.url.ph" placeholder="<?= htmlspecialchars($t('lora.add.url.ph', 'CivitAI or direct .safetensors URL'), ENT_QUOTES) ?>">
               </label>

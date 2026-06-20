@@ -162,6 +162,8 @@
   "models.vae.default": "Standard (Modell)",
   "section.loras": "LoRAs",
   "lora.add.title": "LoRA über URL hinzufügen",
+  "lora.what": "Ein LoRA ist ein kleines Add-on, das dem Modell einen bestimmten Stil, Charakter oder ein Konzept beibringt. Füge ein oder mehrere zum Basismodell hinzu, um den Look zu steuern. Verwende LoRAs der SDXL-Familie (SDXL 1.0 / Pony / Illustrious / NoobAI) — SD-1.5-LoRAs sind mit dieser Engine nicht kompatibel.",
+  "lora.find": "Kompatible LoRAs auf CivitAI finden ↗",
   "lora.add.url.ph": "CivitAI- oder direkte .safetensors-URL",
   "lora.add.token.ph": "CivitAI-Token (optional)",
   "lora.add.token.hint": "für manche Modelle erforderlich",
