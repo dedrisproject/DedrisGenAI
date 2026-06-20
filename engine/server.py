@@ -866,8 +866,30 @@ def constants_max_seed():
 
 # Per-preset model download state, so the UI can show a "downloading model" bar
 # the moment a preset is selected (not only when generating).
-_PRESET_DL = {}            # label -> {state, message, done, total, event}
+#
+# Each entry is a mutable status dict. The internal shape is:
+#   {
+#     state:            "idle" | "downloading" | "ready" | "error"
+#     message:          str   — human-readable status line
+#     done:             int   — files fully downloaded so far
+#     total:            int   — total files to download for this preset
+#     event:            threading.Event — set() when the download settles
+#     file:             str | None — current file being downloaded
+#     file_index:       int   — 1-based index of the current file (0 before start)
+#     file_count:       int   — same as total (number of files)
+#     downloaded_bytes: int   — bytes streamed for the CURRENT file
+#     total_bytes:      int   — Content-Length of the CURRENT file (0 if unknown)
+#   }
+# _public_dl_status() projects this into the JSON returned by /api/model_status
+# and /api/ensure_model (see that helper for the exact public field list/types).
+_PRESET_DL = {}            # label -> status dict (see shape above)
 _PRESET_DL_LOCK = threading.Lock()
+
+# Streaming-download chunk size (bytes) and how often (in bytes) we flush the
+# running counter into the shared status dict. Throttling the dict writes keeps
+# the per-chunk loop cheap while still giving the UI smooth byte progress.
+_DL_CHUNK = 1024 * 1024            # 1 MB read chunks
+_DL_PROGRESS_FLUSH = 4 * 1024 * 1024   # update downloaded_bytes every ~4 MB
 
 
 def _preset_missing(label):
@@ -894,9 +916,34 @@ def _preset_missing(label):
 
 
 def _public_dl_status(label, st):
+    """Project the internal per-preset download status dict into the public JSON
+    returned by both /api/model_status and /api/ensure_model.
+
+    model_status / ensure_model JSON shape
+    --------------------------------------
+      {
+        "preset":           str    — preset label (Standard | Anime | Realistic)
+        "state":            str    — "idle" | "downloading" | "ready" | "error"
+        "message":          str    — human-readable status line
+        "done":             int    — files fully downloaded so far
+        "total":            int    — total files to download for this preset
+        "ready":            bool   — true iff state == "ready"
+        "file":             str|None — name of the file currently downloading
+        "file_index":       int    — 1-based index of the current file (0 before start)
+        "file_count":       int    — number of files to download (same as total)
+        "downloaded_bytes": int    — bytes streamed for the CURRENT file
+        "total_bytes":      int    — Content-Length of the CURRENT file (0 if unknown)
+      }
+    With downloaded_bytes / total_bytes the UI can render "200 MB / 8 GB" for the
+    file in flight, and file_index / file_count for the overall "(2/3)" position.
+    """
     return {"preset": label, "state": st.get("state", "idle"),
             "message": st.get("message", ""), "done": st.get("done", 0),
-            "total": st.get("total", 0), "ready": st.get("state") == "ready"}
+            "total": st.get("total", 0), "ready": st.get("state") == "ready",
+            "file": st.get("file"), "file_index": int(st.get("file_index", 0) or 0),
+            "file_count": int(st.get("file_count", 0) or 0),
+            "downloaded_bytes": int(st.get("downloaded_bytes", 0) or 0),
+            "total_bytes": int(st.get("total_bytes", 0) or 0)}
 
 
 def _ensure_preset(label):
@@ -906,7 +953,9 @@ def _ensure_preset(label):
     bootstrap()
     if label not in PRESET_LABEL_TO_FILE:
         return {"preset": label, "state": "error", "ready": False,
-                "message": f"unknown preset '{label}'", "done": 0, "total": 0}
+                "message": f"unknown preset '{label}'", "done": 0, "total": 0,
+                "file": None, "file_index": 0, "file_count": 0,
+                "downloaded_bytes": 0, "total_bytes": 0}
     with _PRESET_DL_LOCK:
         st = _PRESET_DL.get(label)
         if st and st.get("state") in ("downloading", "ready"):
@@ -917,28 +966,107 @@ def _ensure_preset(label):
             missing = []
         if not missing:
             st = {"state": "ready", "message": "Model ready", "done": 0, "total": 0,
-                  "event": threading.Event()}
+                  "event": threading.Event(),
+                  "file": None, "file_index": 0, "file_count": 0,
+                  "downloaded_bytes": 0, "total_bytes": 0}
             st["event"].set()
             _PRESET_DL[label] = st
             return _public_dl_status(label, st)
         st = {"state": "downloading", "done": 0, "total": len(missing),
               "message": f"Downloading model for {label} ({missing[0][0]}) …",
-              "event": threading.Event()}
+              "event": threading.Event(),
+              "file": missing[0][0], "file_index": 0, "file_count": len(missing),
+              "downloaded_bytes": 0, "total_bytes": 0}
         _PRESET_DL[label] = st
     threading.Thread(target=_run_preset_download, args=(label, missing, st), daemon=True).start()
     return _public_dl_status(label, st)
 
 
+def _download_file_with_progress(url, dest_path, st):
+    """Stream ``url`` to ``dest_path`` reporting byte progress into ``st``.
+
+    Uses only stdlib ``urllib.request`` so it adds no dependency and honors the
+    relaxed SSL context the module installs at import (``ssl._create_default_
+    https_context = unverified``). Bytes are streamed in ~1 MB chunks to a
+    sibling ``.part`` temp file, with ``st["downloaded_bytes"]`` updated as we go
+    (throttled to keep the loop cheap). On success the temp file is atomically
+    ``os.replace``d onto ``dest_path`` so a final file is never left corrupt; on
+    any error the ``.part`` file is removed and the exception re-raised.
+
+    No partial-resume: an interrupted download discards the ``.part`` and starts
+    fresh next time. That is sufficient for a fresh product and keeps the final
+    artifact always-valid (the only invariant that matters here).
+    """
+    import urllib.request
+
+    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+    tmp_path = dest_path + ".part"
+
+    # Reset the per-file counters before the first byte arrives.
+    st["downloaded_bytes"] = 0
+    st["total_bytes"] = 0
+
+    # A UA header avoids the occasional 403 from hosts that reject the default
+    # urllib agent; harmless for Hugging Face / generic CDNs.
+    req = urllib.request.Request(url, headers={"User-Agent": "DedrisGenAI/engine"})
+    try:
+        with urllib.request.urlopen(req) as resp:
+            cl = resp.headers.get("Content-Length")
+            try:
+                total_bytes = int(cl) if cl is not None else 0
+            except (TypeError, ValueError):
+                total_bytes = 0
+            st["total_bytes"] = total_bytes
+
+            downloaded = 0
+            since_flush = 0
+            with open(tmp_path, "wb") as out:
+                while True:
+                    chunk = resp.read(_DL_CHUNK)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    downloaded += len(chunk)
+                    since_flush += len(chunk)
+                    # Throttle the shared-dict write so the hot loop stays cheap.
+                    if since_flush >= _DL_PROGRESS_FLUSH:
+                        st["downloaded_bytes"] = downloaded
+                        since_flush = 0
+            # Final flush so the UI sees the complete count for this file.
+            st["downloaded_bytes"] = downloaded
+        # Atomic publish: a partial write never appears as the real file.
+        os.replace(tmp_path, dest_path)
+    except Exception:
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except Exception:
+            pass
+        raise
+
+
 def _run_preset_download(label, missing, st):
     try:
-        from modules.model_loader import load_file_from_url
         total = len(missing)
+        st["file_count"] = total
         for i, (fn, url, model_dir) in enumerate(missing, start=1):
             st["done"] = i - 1
+            st["file"] = fn
+            st["file_index"] = i
+            st["downloaded_bytes"] = 0
+            st["total_bytes"] = 0
             st["message"] = (f"Downloading {fn} ({i}/{total}) for {label} — "
                              f"first use, this can take a few minutes…")
-            load_file_from_url(url=url, model_dir=model_dir, file_name=fn)
+            try:
+                _download_file_with_progress(url, os.path.join(model_dir, fn), st)
+            except (ValueError, NotImplementedError):
+                # Clearly-unsupported URL scheme for urllib (e.g. a non-http(s)
+                # source). Fall back to the model loader so such presets still
+                # provision, just without byte progress for that file.
+                from modules.model_loader import load_file_from_url
+                load_file_from_url(url=url, model_dir=model_dir, file_name=fn)
         st["done"] = total
+        st["file"] = None
         st["state"] = "ready"
         st["message"] = "Model ready"
     except Exception:
@@ -1302,7 +1430,9 @@ def create_app():
         return {"preset": label, "ready": not missing,
                 "state": "ready" if not missing else "idle",
                 "message": "Model ready" if not missing else "Model not downloaded yet",
-                "done": 0, "total": len(missing)}
+                "done": 0, "total": len(missing),
+                "file": None, "file_index": 0, "file_count": len(missing),
+                "downloaded_bytes": 0, "total_bytes": 0}
 
     @app.get("/outputs/{path:path}")
     def outputs(path: str):

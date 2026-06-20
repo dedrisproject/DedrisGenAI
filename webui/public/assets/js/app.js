@@ -2,7 +2,7 @@
  * Vanilla JS, no framework. Talks only to same-origin /api/* (the PHP proxy).
  *
  * API endpoints used (mirror DEDRIS_SPEC.md §5):
- *   GET  /api/health                      -> { status, version, device }
+ *   GET  /api/health                      -> { status, version, device }   // device: cuda|mps|cpu|...
  *   GET  /api/options                     -> { presets, performances, aspect_ratios,
  *                                              samplers, schedulers, output_formats,
  *                                              styles:[{name,preview}], models:{checkpoints,loras,vaes} }
@@ -13,11 +13,13 @@
  *   GET  /api/lang?code=it                -> { "<key>": "<translation>", ..., _lang }
  *   GET  /outputs/<path>                  -> image bytes (served via proxy)
  *
- * Three UI concerns layered on top of the original controller:
- *   1. Simple / Advanced mode  — toggles html.mode-simple|mode-advanced.
- *   2. i18n (it/en/de/fr/es)   — applies data-i18n* attributes from a dictionary.
- *   3. Rich progress UX        — elapsed timer, indeterminate bar, stage hints,
+ * Two UI concerns layered on top of the original controller:
+ *   1. i18n (it/en/de/fr/es)   — applies data-i18n* attributes from a dictionary.
+ *   2. Rich progress UX        — elapsed timer, indeterminate bar, stage hints,
  *                                first-run note, localized state messages.
+ *
+ * The interface is always Advanced (the old Simple/Advanced toggle was removed):
+ * html.mode-advanced is set by the PHP head-script and never changes.
  */
 (function () {
   'use strict';
@@ -38,6 +40,20 @@
     return n;
   };
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // Human-friendly byte size using GB/MB (e.g. 8589934592 -> "8 GB",
+  // 209715200 -> "200 MB"). Falls back to KB/bytes for very small values.
+  function formatBytes(n) {
+    const b = Number(n);
+    if (!Number.isFinite(b) || b < 0) return '';
+    const GB = 1024 * 1024 * 1024;
+    const MB = 1024 * 1024;
+    const KB = 1024;
+    if (b >= GB) { const v = b / GB; return (v >= 10 ? Math.round(v) : Math.round(v * 10) / 10) + ' GB'; }
+    if (b >= MB) { return Math.round(b / MB) + ' MB'; }
+    if (b >= KB) { return Math.round(b / KB) + ' KB'; }
+    return b + ' B';
+  }
 
   async function api(path, opts = {}) {
     const res = await fetch('api/' + path.replace(/^\/?api\//, '').replace(/^\//, ''), {
@@ -69,10 +85,10 @@
   const LANGS = ['en', 'it', 'de', 'fr', 'es'];
   const DEFAULT_LANG = (document.documentElement.dataset.defaultLang) || 'en';
   const LS_LANG = 'dedris.lang';
-  const LS_MODE = 'dedris.mode';
   const LS_TASK = 'dedris.task';   // in-flight task id, so a page refresh can reconnect
-  const LS_RESULTS = 'dedris.results'; // accumulated result URLs, survive a refresh
+  const LS_RESULTS = 'dedris.results'; // accumulated result entries, survive a refresh
   const LS_PERF = 'dedris.perf_open'; // Performance collapsible open/closed state
+  const LS_MODELS_OPEN = 'dedris.models_open'; // Models accordion open/closed state
   const LS_PENDING_STYLE = 'dedris.pendingStyle'; // style chosen on the demo page to preselect
   const RESULTS_CAP = 200;         // cap the persisted/in-memory feed length
 
@@ -140,6 +156,8 @@
 
   /** Re-render / re-label things that aren't plain data-i18n nodes. */
   function refreshDynamicI18n() {
+    // preset chips carry localized display names (values stay Standard/Anime/Realistic)
+    relabelPresetChips();
     // styles grid (placeholders carry translated alt/title)
     renderStyles($('#style-search') ? $('#style-search').value : '');
     // results feed (image alt text is localized)
@@ -158,6 +176,8 @@
     if (state.modelBusy && state.modelBarKey) {
       const el2 = document.getElementById('model-bar-text');
       if (el2) el2.textContent = t(state.modelBarKey);
+      // re-render the localized download-size / file detail line too
+      if (state.modelLastData) renderModelProgress(state.modelLastData);
     }
     // re-localize the inpaint editor's dynamic bits
     if (typeof refreshInpaintI18n === 'function') refreshInpaintI18n();
@@ -165,32 +185,15 @@
     if (typeof refreshEstimate === 'function') refreshEstimate();
   }
 
-  // ============================================================== Simple/Advanced mode
-  function applyMode(mode, persist = true) {
-    mode = (mode === 'advanced') ? 'advanced' : 'simple';
-    const root = document.documentElement;
-    root.classList.toggle('mode-simple', mode === 'simple');
-    root.classList.toggle('mode-advanced', mode === 'advanced');
-    $$('.mode-toggle .mode-btn').forEach((b) => {
-      const on = b.dataset.mode === mode;
-      b.classList.toggle('active', on);
-      b.setAttribute('aria-checked', on ? 'true' : 'false');
-    });
-    state.mode = mode;
-    if (persist) { try { localStorage.setItem(LS_MODE, mode); } catch (_) {} }
-    // Move the single prompt-host into the mount that matches the new mode.
-    placePrompt();
-    // Styles are text-to-image only; re-evaluate on every mode switch (Simple is
-    // effectively text-to-image, so styles stay visible there).
-    updateStylesVisibility();
-  }
+  // ============================================================== interface mode
+  // The Simple/Advanced toggle was removed: the UI is ALWAYS Advanced. The PHP
+  // head-script sets html.mode-advanced before app.js runs; we just make sure it
+  // is present and seed state.mode so any remaining reads stay consistent.
   function initMode() {
-    let mode = 'simple';
-    try { const m = localStorage.getItem(LS_MODE); if (m === 'advanced' || m === 'simple') mode = m; } catch (_) {}
-    applyMode(mode, false);
-    $$('.mode-toggle .mode-btn').forEach((b) => {
-      b.addEventListener('click', () => applyMode(b.dataset.mode));
-    });
+    const root = document.documentElement;
+    root.classList.remove('mode-simple');
+    root.classList.add('mode-advanced');
+    state.mode = 'advanced';
   }
 
   // ============================================================== Performance control
@@ -206,6 +209,21 @@
     sec.open = open;
     sec.addEventListener('toggle', () => {
       try { localStorage.setItem(LS_PERF, sec.open ? '1' : '0'); } catch (_) {}
+    });
+  }
+
+  // ============================================================== Models accordion
+  // The Models panel (base model / refiner / refiner switch / 5 LoRAs) is a
+  // collapsible <details>. It defaults to collapsed; the open/closed state is
+  // persisted in localStorage so it survives a refresh.
+  function initModelsAccordion() {
+    const sec = $('#models-accordion');
+    if (!sec) return;
+    let open = false;
+    try { open = localStorage.getItem(LS_MODELS_OPEN) === '1'; } catch (_) {}
+    sec.open = open;   // default collapsed unless the user opened it before
+    sec.addEventListener('toggle', () => {
+      try { localStorage.setItem(LS_MODELS_OPEN, sec.open ? '1' : '0'); } catch (_) {}
     });
   }
 
@@ -230,15 +248,17 @@
     options: null,
     styles: [],            // [{name, preview}]
     selectedStyles: new Set(),
-    results: [],           // ordered list of result image URLs (persistent feed, newest first on render)
-    resultsSet: new Set(), // dedupe guard for state.results
+    results: [],           // ordered list of result entries {url, prompt, negative_prompt} (newest first on render)
+    resultsSet: new Set(), // dedupe guard for state.results (keyed by url)
+    runPrompt: '',         // prompt used by the in-flight generation (attached to its results)
+    runNegative: '',       // negative prompt used by the in-flight generation
     activePreset: 'Standard',
     activeTab: 'text',
     taskId: null,
     polling: false,
     pollTimer: null,
     generating: false,
-    mode: 'simple',
+    mode: 'advanced',
     // progress bookkeeping
     startTime: 0,
     elapsedTimer: null,
@@ -249,7 +269,7 @@
     // i18n-aware message bookkeeping (so language switches re-render live text)
     bannerKey: null, bannerVars: null, bannerKind: 'info', bannerSpin: false,
     progressKey: null, progressVars: null,
-    enginePillKey: null, enginePillPrefix: '',
+    enginePillKey: null, enginePillVars: null,
     // model-download bookkeeping (Feature 1): true while a preset's model is
     // downloading, which keeps the Generate button disabled with a loading bar.
     modelBusy: false,
@@ -258,6 +278,9 @@
     modelStartTime: 0,
     modelElapsedTimer: null,
     modelBarKey: null,
+    modelLastData: null,
+    // lightbox: prompt + negative of the currently-open image (for Copy buttons)
+    lbPrompt: '', lbNegative: '',
   };
   const LORA_COUNT = 5;
 
@@ -270,16 +293,34 @@
   const elBannerText = $('#banner-text');
   const elBannerSpin = $('#banner-spinner');
 
-  function setEngine(status, key, prefix) {
+  // Set the engine status pill. `key` is an i18n key; `vars` are optional
+  // interpolation vars (used by the device-aware ready messages, which carry a
+  // {ready} placeholder). The pill re-renders its text on a language change via
+  // refreshEnginePill().
+  function setEngine(status, key, vars) {
     state.enginePillKey = key;
-    state.enginePillPrefix = prefix || '';
+    state.enginePillVars = vars || null;
     elStatus.className = 'engine-pill ' + status;
-    $('.txt', elStatus).textContent = (prefix || '') + t(key);
+    $('.txt', elStatus).textContent = t(key, vars);
   }
   function refreshEnginePill() {
-    if (state.enginePillKey) {
-      $('.txt', elStatus).textContent = (state.enginePillPrefix || '') + t(state.enginePillKey);
+    if (!state.enginePillKey) return;
+    let vars = state.enginePillVars;
+    // The device-aware ready messages embed t('engine.ready'); recompute it so a
+    // language change re-localizes the nested word, not just the outer template.
+    if (vars && Object.prototype.hasOwnProperty.call(vars, 'ready')) {
+      vars = { ...vars, ready: t('engine.ready') };
     }
+    $('.txt', elStatus).textContent = t(state.enginePillKey, vars);
+  }
+  // Map a health `device` string to the right device-aware ready i18n key.
+  // cuda -> NVIDIA CUDA, mps -> Apple Metal, cpu -> CPU; anything else -> generic.
+  function engineReadyKey(device) {
+    const d = String(device || '').toLowerCase();
+    if (d.indexOf('cuda') === 0 || d.indexOf('nvidia') === 0) return 'engine.ready.cuda';
+    if (d.indexOf('mps') === 0 || d.indexOf('metal') === 0)   return 'engine.ready.mps';
+    if (d.indexOf('cpu') === 0)                                return 'engine.ready.cpu';
+    return null;   // unknown device -> fall back to the plain ready message
   }
   /** Show a banner from an i18n key (re-rendered on language change). */
   function showBannerKey(kind, key, vars, spinning) {
@@ -301,6 +342,10 @@
   const elModelBar = $('#model-bar');
   const elModelBarText = $('#model-bar-text');
   const elModelBarElapsed = $('#model-bar-elapsed');
+  const elModelBarFill = $('#model-bar-fill');
+  const elModelBarTrack = $('#model-bar-track');
+  const elModelBarSize = $('#model-bar-size');
+  const elModelBarFile = $('#model-bar-file');
 
   function fmtElapsedMs(ms) {
     const s = Math.max(0, Math.floor(ms / 1000));
@@ -328,6 +373,14 @@
     state.modelBusy = false;
     state.modelStartTime = 0;
     if (state.modelElapsedTimer) { clearInterval(state.modelElapsedTimer); state.modelElapsedTimer = null; }
+    // reset the download-size / file detail + determinate fill for next time
+    if (elModelBarSize) { elModelBarSize.textContent = ''; elModelBarSize.classList.add('hidden'); }
+    if (elModelBarFile) { elModelBarFile.textContent = ''; elModelBarFile.classList.add('hidden'); }
+    if (elModelBarFill && elModelBarTrack) {
+      elModelBarTrack.classList.remove('determinate');
+      elModelBarFill.classList.remove('determinate');
+      elModelBarFill.style.width = '';
+    }
     updateGenerateEnabled();
   }
 
@@ -372,6 +425,8 @@
         const msg = (data && typeof data.message === 'string' && data.message.trim()) ? data.message.trim() : '';
         elModelBarText.textContent = msg && msg !== base ? msg : base;
       }
+      // Download-size + current-file detail and a determinate fill (Feature 4).
+      renderModelProgress(data);
       scheduleModelPoll(preset);
     } else if (st === 'error') {
       stopModelPolling();
@@ -382,6 +437,59 @@
       // ready | idle | anything else -> nothing to download, clear the bar.
       stopModelPolling();
       hideModelBar();
+    }
+  }
+
+  // Render the download-size detail + determinate fill from a /api/model_status
+  // payload. The engine may include: file, file_index, file_count,
+  // downloaded_bytes, total_bytes. When total_bytes > 0 we show a determinate
+  // fill (downloaded/total) and the "<downloaded> / <total>" size; otherwise we
+  // fall back to the indeterminate animation and hide the size line.
+  function renderModelProgress(data) {
+    const d = data || {};
+    state.modelLastData = d;   // kept so a language switch can re-render the size/file line
+    const downloaded = Number(d.downloaded_bytes);
+    const total = Number(d.total_bytes);
+    const hasTotal = Number.isFinite(total) && total > 0;
+    const hasDownloaded = Number.isFinite(downloaded) && downloaded >= 0;
+
+    // size: "<downloaded> / <total>" (e.g. "200 MB / 8 GB")
+    if (elModelBarSize) {
+      if (hasTotal && hasDownloaded) {
+        elModelBarSize.textContent = t('model.size', { downloaded: formatBytes(downloaded), total: formatBytes(total) });
+        elModelBarSize.classList.remove('hidden');
+      } else {
+        elModelBarSize.textContent = '';
+        elModelBarSize.classList.add('hidden');
+      }
+    }
+
+    // current file line: name + "File <i> of <n>" if provided
+    if (elModelBarFile) {
+      const fileName = (typeof d.file === 'string' && d.file.trim()) ? d.file.trim() : '';
+      const idx = Number(d.file_index);
+      const count = Number(d.file_count);
+      let line = fileName;
+      if (Number.isFinite(idx) && Number.isFinite(count) && count > 0) {
+        const counter = t('model.file', { index: idx, count });
+        line = line ? (line + ' · ' + counter) : counter;
+      }
+      elModelBarFile.textContent = line;
+      elModelBarFile.classList.toggle('hidden', !line);
+    }
+
+    // determinate vs indeterminate fill
+    if (elModelBarFill && elModelBarTrack) {
+      if (hasTotal && hasDownloaded) {
+        const pct = Math.max(0, Math.min(100, (downloaded / total) * 100));
+        elModelBarTrack.classList.add('determinate');
+        elModelBarFill.classList.add('determinate');
+        elModelBarFill.style.width = pct + '%';
+      } else {
+        elModelBarTrack.classList.remove('determinate');
+        elModelBarFill.classList.remove('determinate');
+        elModelBarFill.style.width = '';   // back to the CSS-driven indeterminate animation
+      }
     }
   }
 
@@ -413,15 +521,34 @@
     if (cur && items && items.some((it) => (valueKey ? it[valueKey] : it) === cur)) sel.value = cur;
   }
 
-  function fillSegmented(container, items, name, checkedValue) {
+  // Fill a segmented (radio) control. The radio VALUE is always the raw item
+  // (the engine API needs the original string); an optional labelFor(value)
+  // maps it to a localized DISPLAY string shown to the user. The span carries a
+  // data-seg-value so labels can be re-localized in place on a language change.
+  function fillSegmented(container, items, name, checkedValue, labelFor) {
     container.innerHTML = '';
     (items || []).forEach((it) => {
       const id = name + '-' + String(it).replace(/[^a-z0-9]+/gi, '_');
+      const label = labelFor ? labelFor(it) : String(it);
       const lab = el('label', { for: id },
         el('input', { type: 'radio', name, id, value: it }),
-        el('span', {}, it));
+        el('span', { 'data-seg-value': String(it) }, label));
       if (it === checkedValue) $('input', lab).checked = true;
       container.append(lab);
+    });
+  }
+
+  // Localized display name for a preset value (Standard/Anime/Realistic). The
+  // value is kept as-is; only the visible text changes per language.
+  function presetLabel(value) {
+    return t('preset.opt.' + String(value).toLowerCase());
+  }
+
+  // Re-label the preset segmented chips in place (value attributes untouched) so
+  // a language switch updates the visible names without rebuilding the control.
+  function relabelPresetChips() {
+    $$('#preset span[data-seg-value]').forEach((sp) => {
+      sp.textContent = presetLabel(sp.getAttribute('data-seg-value'));
     });
   }
   const segValue = (name) => { const c = $(`input[name="${name}"]:checked`); return c ? c.value : null; };
@@ -508,50 +635,41 @@
     // Only preselect a style the engine actually knows about (avoids dead chips).
     const known = state.styles.some((s) => s.name === name);
     if (!known) return;
-    // Styles live in Text-to-Image. In Advanced, make sure the Text tab is active
-    // (Simple already shows styles and behaves as Text-to-Image).
-    if (state.mode === 'advanced') selectTab('text');
+    // Styles live in Text-to-Image, so make sure the Text tab is active.
+    selectTab('text');
     state.selectedStyles.add(name);
     renderStyles($('#style-search') ? $('#style-search').value : '');
     updateStylesVisibility();
   }
 
-  // The Styles picker belongs to Text-to-Image only. It is visible whenever the
-  // effective input mode is text-to-image, and hidden when Inpaint is active.
-  // In Simple mode the (advanced-only) input tabs are hidden and the flow is
-  // effectively Text-to-Image, so state.activeTab stays 'text' and styles remain
-  // visible. We re-evaluate this on tab change and on Simple/Advanced switch.
+  // The Styles picker belongs to Text-to-Image only. It is visible when the
+  // active input tab is Text-to-Image and hidden for Edit Image (inpaint) and
+  // Create variants (uov). Re-evaluated on every tab change.
   function updateStylesVisibility() {
     const card = $('#styles-card');
     if (!card) return;
-    // In Simple mode the tabs box is hidden; treat the mode as text-to-image.
-    const effectiveTab = (state.mode === 'simple') ? 'text' : state.activeTab;
-    // Styles belong to Text-to-Image only; hide them for Edit Image and Create variants.
-    const showStyles = (effectiveTab !== 'inpaint' && effectiveTab !== 'uov');
+    const showStyles = (state.activeTab !== 'inpaint' && state.activeTab !== 'uov');
     card.classList.toggle('hidden', !showStyles);
   }
 
   // ---------------------------------------------------------------- single prompt that follows the tab
   // There is exactly ONE prompt group in the page (#prompt-host, containing the
   // single #prompt + #negative_prompt). We MOVE that same DOM node into the mount
-  // point that matches the current mode + active tab. Because it is the very same
-  // element being re-parented (appendChild, not cloned), the typed value — and an
-  // active text caret/focus — are preserved across mode and tab switches.
+  // point that matches the active tab. Because it is the very same element being
+  // re-parented (appendChild, not cloned), the typed value — and an active text
+  // caret/focus — are preserved across tab switches.
   function placePrompt() {
     const host = $('#prompt-host');
     if (!host) return;
     let mount;
-    if (state.mode === 'simple') {
-      // Simple mode: top of the controls (above the hidden tabs box).
-      mount = $('#prompt-mount-simple');
-    } else if (state.activeTab === 'inpaint') {
-      // Advanced + Inpaint: inside the inpaint panel, above the mask editor.
+    if (state.activeTab === 'inpaint') {
+      // Inpaint: inside the inpaint panel, above the mask editor.
       mount = $('#prompt-mount-inpaint');
     } else if (state.activeTab === 'uov') {
-      // Advanced + Create variants: inside the uov panel.
+      // Create variants: inside the uov panel.
       mount = $('#prompt-mount-uov');
     } else {
-      // Advanced + Text to Image: inside the text-to-image panel.
+      // Text to Image: inside the text-to-image panel.
       mount = $('#prompt-mount-text');
     }
     if (!mount) return;                       // guard for missing mount points
@@ -621,7 +739,7 @@
     state.options = opts;
     const o = opts || {};
 
-    fillSegmented($('#preset'), o.presets || FALLBACK.presets, 'preset', state.activePreset);
+    fillSegmented($('#preset'), o.presets || FALLBACK.presets, 'preset', state.activePreset, presetLabel);
     $$('#preset input').forEach((r) => r.addEventListener('change', () => loadPreset(r.value)));
 
     fillSegmented($('#performance'), o.performances || FALLBACK.performances, 'performance', 'Speed');
@@ -967,11 +1085,17 @@
     elPreviewPh.classList.add('hidden');
   }
   // ---------------------------------------------------------------- accumulating results feed
-  /** Persist the feed URLs (capped) so a refresh keeps showing them. */
+  // Each feed entry is { url, prompt, negative_prompt }. Older persisted feeds
+  // stored bare URL strings; loadResults() upgrades those to entries on read so
+  // rendering never breaks on legacy data.
+  function makeEntry(url, prompt, negative) {
+    return { url, prompt: prompt || '', negative_prompt: negative || '' };
+  }
+  /** Persist the feed entries (capped) so a refresh keeps showing them. */
   function saveResults() {
     try { localStorage.setItem(LS_RESULTS, JSON.stringify(state.results.slice(0, RESULTS_CAP))); } catch (_) {}
   }
-  /** Load any previously persisted feed URLs into memory. */
+  /** Load any previously persisted feed entries into memory (string-tolerant). */
   function loadResults() {
     let saved = null;
     try { saved = localStorage.getItem(LS_RESULTS); } catch (_) {}
@@ -981,32 +1105,39 @@
     if (!Array.isArray(arr)) arr = [];
     state.results = [];
     state.resultsSet = new Set();
-    arr.forEach((u) => {
-      if (typeof u === 'string' && u && !state.resultsSet.has(u)) {
-        state.resultsSet.add(u);
-        state.results.push(u);
-      }
+    arr.forEach((item) => {
+      // Backward compatibility: legacy entries were plain URL strings.
+      const url = (typeof item === 'string') ? item : (item && item.url);
+      if (!url || state.resultsSet.has(url)) return;
+      const prompt = (item && typeof item === 'object') ? item.prompt : '';
+      const negative = (item && typeof item === 'object') ? item.negative_prompt : '';
+      state.resultsSet.add(url);
+      state.results.push(makeEntry(url, prompt, negative));
     });
   }
 
   /**
    * Merge a batch of images into the persistent feed (dedupe by URL, keep
-   * insertion order). Returns true if anything new was added. The feed is the
-   * accumulating history; it is never wiped when a new generation starts.
+   * insertion order). Each new image is tagged with the prompt + negative prompt
+   * that produced it (the in-flight run's, captured in onGenerate / recoverTask).
+   * Returns true if anything new was added. The feed is the accumulating
+   * history; it is never wiped when a new generation starts.
    */
   function addResults(images) {
     let added = false;
+    const prompt = state.runPrompt || '';
+    const negative = state.runNegative || '';
     (images || []).forEach((img) => {
       const url = outputUrl(img);
       if (!url || state.resultsSet.has(url)) return;
       state.resultsSet.add(url);
-      state.results.push(url);
+      state.results.push(makeEntry(url, prompt, negative));
       added = true;
     });
     if (added) {
       if (state.results.length > RESULTS_CAP) {
         const drop = state.results.splice(0, state.results.length - RESULTS_CAP);
-        drop.forEach((u) => state.resultsSet.delete(u));
+        drop.forEach((e) => state.resultsSet.delete(e.url));
       }
       renderFeed();
       saveResults();
@@ -1022,7 +1153,8 @@
     elFeed.innerHTML = '';
     // newest first
     for (let i = state.results.length - 1; i >= 0; i--) {
-      const url = state.results[i];
+      const entry = state.results[i];
+      const url = entry.url;
       const editBtn = el('button', {
         type: 'button', class: 'gallery-act gallery-act-edit',
         title: t('gallery.edit'), 'aria-label': t('gallery.edit'),
@@ -1036,9 +1168,14 @@
       }, el('span', { class: 'gallery-act-ico', 'aria-hidden': 'true' }, '🖼️'),
          el('span', { class: 'gallery-act-txt' }, t('gallery.variants')));
       const actions = el('div', { class: 'gallery-actions' }, editBtn, varBtn);
-      const a = el('a', { href: '#', class: 'gallery-item', onclick: (e) => { e.preventDefault(); openLightbox(url); } },
-        el('img', { src: url, alt: t('results.preview.alt'), loading: 'lazy' }),
+      // A small caption hint on the card shows the prompt is saved (and is the
+      // image's tooltip); clicking the card opens the lightbox with full details.
+      const imgAttrs = { src: url, alt: t('results.preview.alt'), loading: 'lazy' };
+      if (entry.prompt) imgAttrs.title = entry.prompt;
+      const a = el('a', { href: '#', class: 'gallery-item', onclick: (e) => { e.preventDefault(); openLightbox(entry); } },
+        el('img', imgAttrs),
         actions);
+      if (entry.prompt) a.append(el('span', { class: 'gallery-caption' }, entry.prompt));
       elFeed.append(a);
     }
     const n = state.results.length;
@@ -1091,6 +1228,10 @@
       const params = gatherParams();
       if (inpaintExtra) Object.assign(params, inpaintExtra);
       if (uovExtra) Object.assign(params, uovExtra);
+      // Remember the prompt + negative used, so each resulting image can carry
+      // them in the feed (and the lightbox can show + copy them).
+      state.runPrompt = params.prompt || '';
+      state.runNegative = params.negative_prompt || '';
       const res = await apiPost('generate', params);
       state.taskId = res && (res.task_id || res.id);
       if (!state.taskId) throw new Error(t('progress.no_task'));
@@ -1239,9 +1380,82 @@
 
   // ---------------------------------------------------------------- lightbox
   const lb = $('#lightbox');
-  function openLightbox(url) { $('#lightbox-img').src = url; lb.classList.add('show'); }
+  const lbImg = $('#lightbox-img');
+  const lbCaption = $('#lightbox-caption');
+  const lbPromptField = $('#lb-prompt-field');
+  const lbPrompt = $('#lb-prompt');
+  const lbNegativeField = $('#lb-negative-field');
+  const lbNegative = $('#lb-negative');
+  const lbCopyPrompt = $('#lb-copy-prompt');
+  const lbCopyNegative = $('#lb-copy-negative');
+
+  // Copy helper: clipboard API with a textarea fallback (file:// / http). Flashes
+  // a localized "Copied" label on the button for quick feedback.
+  function copyText(text, btn) {
+    if (text == null) return;
+    const flash = () => {
+      if (!btn) return;
+      const orig = btn.getAttribute('data-i18n');
+      const prev = btn.textContent;
+      btn.textContent = t('result.copied');
+      setTimeout(() => { btn.textContent = orig ? t(orig) : prev; }, 1200);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(flash, () => fallbackCopy(text, flash));
+    } else {
+      fallbackCopy(text, flash);
+    }
+  }
+  function fallbackCopy(text, done) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      if (done) done();
+    } catch (_) { /* ignore */ }
+  }
+
+  // Accepts a feed entry {url, prompt, negative_prompt} or a bare URL string
+  // (legacy callers). Shows the prompt + negative caption when present.
+  function openLightbox(entryOrUrl) {
+    const entry = (typeof entryOrUrl === 'string') ? { url: entryOrUrl, prompt: '', negative_prompt: '' } : (entryOrUrl || {});
+    lbImg.src = entry.url || '';
+    const prompt = entry.prompt || '';
+    const negative = entry.negative_prompt || '';
+
+    if (prompt) {
+      lbPrompt.textContent = prompt;
+      if (lbPromptField) lbPromptField.classList.remove('hidden');
+    } else {
+      lbPrompt.textContent = t('result.no_prompt');
+      if (lbPromptField) lbPromptField.classList.remove('hidden');
+    }
+    if (lbCopyPrompt) lbCopyPrompt.classList.toggle('hidden', !prompt);
+
+    if (negative) {
+      lbNegative.textContent = negative;
+      if (lbNegativeField) lbNegativeField.classList.remove('hidden');
+    } else if (lbNegativeField) {
+      lbNegativeField.classList.add('hidden');
+    }
+    if (lbCopyNegative) lbCopyNegative.classList.toggle('hidden', !negative);
+
+    // Always show the caption block (it carries at least the prompt line).
+    if (lbCaption) lbCaption.classList.remove('hidden');
+
+    // wire copy buttons to this image's text
+    state.lbPrompt = prompt;
+    state.lbNegative = negative;
+    lb.classList.add('show');
+  }
   function closeLightbox() { lb.classList.remove('show'); }
   $('#lightbox-close').addEventListener('click', closeLightbox);
+  if (lbCopyPrompt) lbCopyPrompt.addEventListener('click', (e) => { e.stopPropagation(); copyText(state.lbPrompt, lbCopyPrompt); });
+  if (lbCopyNegative) lbCopyNegative.addEventListener('click', (e) => { e.stopPropagation(); copyText(state.lbNegative, lbCopyNegative); });
   lb.addEventListener('click', (e) => { if (e.target === lb) closeLightbox(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeLightbox(); });
 
@@ -1302,11 +1516,9 @@
     });
   }
 
-  // Make a given input tab visible & active. The input tabs only exist in
-  // Advanced mode, so switch to Advanced first if we're in Simple; applyMode()
-  // and selectTab() both run placePrompt() + updateStylesVisibility() for us.
+  // Make a given input tab visible & active. selectTab() runs placePrompt() +
+  // updateStylesVisibility() for us.
   function activateInputTab(name) {
-    if (state.mode !== 'advanced') applyMode('advanced');
     selectTab(name);
   }
 
@@ -1741,17 +1953,20 @@
   async function checkHealth(first = false) {
     try {
       const h = await apiGet('health');
-      const prefix = (h && h.device ? h.device.toUpperCase() + ' · ' : '');
-      setEngine('online', 'engine.ready', prefix);
+      // Device-aware ready text: "NVIDIA CUDA: Engine Ready", "Apple Metal: …",
+      // "CPU: …". Unknown/absent device -> the plain "Engine Ready" message.
+      const devKey = engineReadyKey(h && h.device);
+      if (devKey) setEngine('online', devKey, { ready: t('engine.ready') });
+      else setEngine('online', 'engine.ready', null);
       if (h && h.version) $('#foot-version').textContent = 'v' + h.version;
       hideBanner();
       return true;
     } catch (e) {
       if (e.status && e.status >= 500 || e.status === 503) {
-        setEngine('starting', 'engine.starting', '');
+        setEngine('starting', 'engine.starting', null);
         showBannerKey('info', 'banner.engine.starting', null, true);
       } else {
-        setEngine('offline', 'engine.offline', '');
+        setEngine('offline', 'engine.offline', null);
         if (first) showBannerKey('error', 'banner.engine.unreachable', null, false);
       }
       return false;
@@ -1765,6 +1980,7 @@
     await setLanguage(pickInitialLang(), false);
 
     initPerformanceSection();
+    initModelsAccordion();
     buildLoraRows();
     bindControls();
     bindTabs();

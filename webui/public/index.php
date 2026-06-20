@@ -47,22 +47,22 @@ foreach (Lang::SUPPORTED as $code) {
   <link rel="icon" type="image/svg+xml" href="assets/img/logo.svg">
   <link rel="stylesheet" href="assets/css/style.css?v=<?= $asset_ver('assets/css/style.css') ?>">
   <script>
-    /* Apply persisted UI mode + language as early as possible to avoid layout
-       jumps / flashes. app.js refines this once the dictionary is loaded. */
+    /* Apply language as early as possible to avoid a flash of untranslated
+       content. The UI is always Advanced (the Simple/Advanced toggle was
+       removed), so the advanced layout class is set unconditionally. app.js
+       refines the dictionary once it is loaded. */
     (function () {
       try {
         var supported = <?= json_encode(array_keys($langs), JSON_UNESCAPED_SLASHES) ?>;
         var def = <?= json_encode(Lang::DEFAULT) ?>;
-        var mode = localStorage.getItem('dedris.mode');
-        if (mode !== 'advanced' && mode !== 'simple') mode = 'simple';
-        document.documentElement.classList.add('mode-' + mode);
+        document.documentElement.classList.add('mode-advanced');
         var lang = localStorage.getItem('dedris.lang');
         if (!lang || supported.indexOf(lang) === -1) {
           var nav = (navigator.language || navigator.userLanguage || def).slice(0, 2).toLowerCase();
           lang = supported.indexOf(nav) !== -1 ? nav : def;
         }
         document.documentElement.setAttribute('lang', lang);
-      } catch (e) { document.documentElement.classList.add('mode-simple'); }
+      } catch (e) { document.documentElement.classList.add('mode-advanced'); }
     })();
   </script>
 </head>
@@ -76,20 +76,10 @@ foreach (Lang::SUPPORTED as $code) {
     </div>
 
     <div class="preset-group">
-      <label for="preset" data-i18n="preset.label"><?= htmlspecialchars($t('preset.label', 'Preset'), ENT_QUOTES) ?></label>
+      <label for="preset" data-i18n="preset.label"><?= htmlspecialchars($t('preset.label', 'Generative Model'), ENT_QUOTES) ?></label>
       <div class="seg" id="preset" role="radiogroup" data-i18n-aria-label="preset.aria" aria-label="<?= htmlspecialchars($t('preset.aria', 'Model preset'), ENT_QUOTES) ?>">
-        <!-- filled from /api/options -->
+        <!-- filled from /api/options (labels localized via preset.opt.*) -->
       </div>
-    </div>
-
-    <!-- Simple / Advanced mode toggle -->
-    <div class="mode-toggle" role="radiogroup" data-i18n-aria-label="mode.label" aria-label="<?= htmlspecialchars($t('mode.label', 'Interface'), ENT_QUOTES) ?>">
-      <button type="button" class="mode-btn" data-mode="simple" role="radio"
-              data-i18n="mode.simple" data-i18n-title="mode.simple.tip"
-              title="<?= htmlspecialchars($t('mode.simple.tip', ''), ENT_QUOTES) ?>"><?= htmlspecialchars($t('mode.simple', 'Simple'), ENT_QUOTES) ?></button>
-      <button type="button" class="mode-btn" data-mode="advanced" role="radio"
-              data-i18n="mode.advanced" data-i18n-title="mode.advanced.tip"
-              title="<?= htmlspecialchars($t('mode.advanced.tip', ''), ENT_QUOTES) ?>"><?= htmlspecialchars($t('mode.advanced', 'Advanced'), ENT_QUOTES) ?></button>
     </div>
 
     <!-- Language selector -->
@@ -128,14 +118,19 @@ foreach (Lang::SUPPORTED as $code) {
     <span id="banner-text"></span>
   </div>
 
-  <!-- model-download bar: shown while a preset's model is downloading on first use -->
+  <!-- model-download bar: shown while a preset's model is downloading on first use.
+       app.js fills in the current file name (#model-bar-file) and the
+       "<downloaded> / <total>" size (#model-bar-size) and turns the track into a
+       determinate fill when the engine reports total_bytes. -->
   <div class="model-bar hidden" id="model-bar" role="status" aria-live="polite">
     <div class="model-bar-row">
       <span class="spinner"></span>
       <span class="model-bar-text" id="model-bar-text" data-i18n="model.downloading"><?= htmlspecialchars($t('model.downloading', 'Downloading model… (first use of this preset)'), ENT_QUOTES) ?></span>
+      <span class="model-bar-size" id="model-bar-size"></span>
       <span class="model-bar-elapsed" id="model-bar-elapsed" title="<?= htmlspecialchars($t('model.elapsed', 'Elapsed'), ENT_QUOTES) ?>" data-i18n-title="model.elapsed">00:00</span>
     </div>
-    <div class="model-bar-track"><div class="model-bar-fill" id="model-bar-fill"></div></div>
+    <div class="model-bar-file" id="model-bar-file"></div>
+    <div class="model-bar-track" id="model-bar-track"><div class="model-bar-fill" id="model-bar-fill"></div></div>
   </div>
 
   <!-- ======================= APP GRID ======================= -->
@@ -147,8 +142,8 @@ foreach (Lang::SUPPORTED as $code) {
       <!-- Shared prompt host. There is exactly ONE positive prompt (#prompt) and
            ONE negative prompt (#negative_prompt) in the whole page. This single
            element is MOVED at runtime (placePrompt() in app.js) into whichever
-           mount point matches the current mode + active tab, so its typed value
-           and focus are preserved across mode/tab switches (same DOM node). -->
+           mount point matches the active tab (text/inpaint/uov), so its typed
+           value and focus are preserved across tab switches (same DOM node). -->
       <div id="prompt-host">
         <div class="card">
           <div class="card-body">
@@ -165,17 +160,13 @@ foreach (Lang::SUPPORTED as $code) {
         </div>
       </div>
 
-      <!-- Simple-mode mount point: the prompt-host lives here (top of controls,
-           above the tabs box) whenever Simple mode is active. -->
-      <div id="prompt-mount-simple" class="prompt-mount"></div>
-
-      <!-- Image-input tabs (advanced only) — the prominent MAIN box.
-           Only the two input modes that are actually wired to the engine are
-           rendered: Text to Image and Inpaint. The previously-stubbed tabs
-           (Upscale/Vary, Image Prompt, Outpaint extras, Describe, Enhance,
+      <!-- Image-input tabs — the prominent MAIN box.
+           Only the input modes that are actually wired to the engine are
+           rendered: Text to Image, Edit Image (inpaint) and Create variants.
+           The previously-stubbed tabs (Image Prompt, Describe, Enhance,
            Metadata) were non-functional and have been removed; they remain in
            git history if they are ever wired up. -->
-      <div class="card adv-only input-tabs-card">
+      <div class="card input-tabs-card">
         <div class="tabs" id="input-tabs" role="tablist">
           <button class="tab active" data-tab="text"     role="tab" data-i18n="tab.text"><?= htmlspecialchars($t('tab.text', 'Text to Image'), ENT_QUOTES) ?></button>
           <button class="tab" data-tab="inpaint"  role="tab" data-i18n="tab.inpaint"><?= htmlspecialchars($t('tab.inpaint', 'Edit Image'), ENT_QUOTES) ?></button>
@@ -264,12 +255,10 @@ foreach (Lang::SUPPORTED as $code) {
         </div>
       </div>
 
-      <!-- Generate / Stop / Skip — directly below the main (tabs) box.
-           Always visible (NOT adv-only): in Simple mode the tabs box above is
-           hidden, so the order collapses to prompt → Generate. -->
+      <!-- Generate / Skip / Stop — directly below the main (tabs) box. -->
       <div class="gen-buttons">
         <button class="btn primary lg" id="btn-generate"><span class="ico">✨</span><span class="txt" data-i18n="btn.generate"><?= htmlspecialchars($t('btn.generate', 'Generate'), ENT_QUOTES) ?></span></button>
-        <button class="btn ghost adv-only" id="btn-skip" disabled data-i18n="btn.skip"><?= htmlspecialchars($t('btn.skip', 'Skip'), ENT_QUOTES) ?></button>
+        <button class="btn ghost" id="btn-skip" disabled data-i18n="btn.skip"><?= htmlspecialchars($t('btn.skip', 'Skip'), ENT_QUOTES) ?></button>
         <button class="btn danger" id="btn-stop" disabled data-i18n="btn.stop"><?= htmlspecialchars($t('btn.stop', 'Stop'), ENT_QUOTES) ?></button>
       </div>
 
@@ -285,9 +274,11 @@ foreach (Lang::SUPPORTED as $code) {
            (applyOptions / loadPreset / gatherParams) keeps working unchanged. -->
 
       <!-- Styles — text-to-image only. Visibility is toggled by app.js based on
-           the effective active input mode: shown for Text to Image (always the
-           case in Simple mode), hidden when the Inpaint tab is active. -->
-      <div class="card" id="styles-card">
+           the active input tab: shown for Text to Image, hidden when the Edit
+           Image (inpaint) or Create variants (uov) tab is active.
+           The styles-card-gap class adds comfortable spacing above it so the
+           Generate buttons row and the Styles block are not cramped. -->
+      <div class="card styles-card-gap" id="styles-card">
         <div class="card-body">
           <div class="section-title" data-i18n="section.styles"><?= htmlspecialchars($t('section.styles', 'Styles'), ENT_QUOTES) ?></div>
           <div class="styles-box">
@@ -301,29 +292,33 @@ foreach (Lang::SUPPORTED as $code) {
         </div>
       </div>
 
-      <!-- Models (advanced only) -->
-      <div class="card adv-only">
-        <div class="card-body">
-          <div class="section-title" data-i18n="section.models"><?= htmlspecialchars($t('section.models', 'Models'), ENT_QUOTES) ?></div>
-          <label class="field"><span class="lbl" data-i18n="field.base_model"><?= htmlspecialchars($t('field.base_model', 'Base model (checkpoint)'), ENT_QUOTES) ?></span>
-            <select id="base_model"></select>
-          </label>
-          <div class="row cols-2">
-            <label class="field"><span class="lbl" data-i18n="field.refiner"><?= htmlspecialchars($t('field.refiner', 'Refiner'), ENT_QUOTES) ?></span>
-              <select id="refiner_model"></select>
+      <!-- Models — collapsible accordion (default collapsed; open/closed state is
+           persisted in localStorage by app.js via #models-accordion). All control
+           ids inside are unchanged so app.js keeps populating/reading them. -->
+      <div class="card">
+        <details class="collapsible" id="models-accordion">
+          <summary data-i18n="section.models"><?= htmlspecialchars($t('section.models', 'Models'), ENT_QUOTES) ?></summary>
+          <div class="card-body">
+            <label class="field"><span class="lbl" data-i18n="field.base_model"><?= htmlspecialchars($t('field.base_model', 'Base model (checkpoint)'), ENT_QUOTES) ?></span>
+              <select id="base_model"></select>
             </label>
-            <label class="field"><span class="field-label"><span data-i18n="field.refiner_switch"><?= htmlspecialchars($t('field.refiner_switch', 'Refiner switch'), ENT_QUOTES) ?></span><span class="val" data-out="refiner_switch">0.50</span></span>
-              <input type="range" id="refiner_switch" min="0.1" max="1" step="0.01" value="0.5">
-            </label>
-          </div>
+            <div class="row cols-2">
+              <label class="field"><span class="lbl" data-i18n="field.refiner"><?= htmlspecialchars($t('field.refiner', 'Refiner'), ENT_QUOTES) ?></span>
+                <select id="refiner_model"></select>
+              </label>
+              <label class="field"><span class="field-label"><span data-i18n="field.refiner_switch"><?= htmlspecialchars($t('field.refiner_switch', 'Refiner switch'), ENT_QUOTES) ?></span><span class="val" data-out="refiner_switch">0.50</span></span>
+                <input type="range" id="refiner_switch" min="0.1" max="1" step="0.01" value="0.5">
+              </label>
+            </div>
 
-          <div class="section-title" style="margin-top:8px" data-i18n="section.loras"><?= htmlspecialchars($t('section.loras', 'LoRAs'), ENT_QUOTES) ?></div>
-          <div id="lora-rows"><!-- 5 rows injected by JS --></div>
-        </div>
+            <div class="section-title" style="margin-top:8px" data-i18n="section.loras"><?= htmlspecialchars($t('section.loras', 'LoRAs'), ENT_QUOTES) ?></div>
+            <div id="lora-rows"><!-- 5 rows injected by JS --></div>
+          </div>
+        </details>
       </div>
 
-      <!-- Advanced (advanced only) -->
-      <div class="card adv-only">
+      <!-- Advanced settings -->
+      <div class="card">
         <details class="collapsible" id="advanced">
           <summary data-i18n="section.advanced"><?= htmlspecialchars($t('section.advanced', 'Advanced'), ENT_QUOTES) ?></summary>
           <div class="card-body">
@@ -402,8 +397,28 @@ foreach (Lang::SUPPORTED as $code) {
     </aside>
   </main>
 
-  <!-- lightbox -->
-  <div class="lightbox" id="lightbox"><span class="close" id="lightbox-close" data-i18n-title="lightbox.close" title="<?= htmlspecialchars($t('lightbox.close', 'Close'), ENT_QUOTES) ?>">×</span><img id="lightbox-img" data-i18n-alt="lightbox.alt" alt="<?= htmlspecialchars($t('lightbox.alt', 'Full image'), ENT_QUOTES) ?>"></div>
+  <!-- lightbox — the image plus a caption showing the prompt + negative prompt
+       that produced it (when saved with the result), with Copy buttons. -->
+  <div class="lightbox" id="lightbox">
+    <span class="close" id="lightbox-close" data-i18n-title="lightbox.close" title="<?= htmlspecialchars($t('lightbox.close', 'Close'), ENT_QUOTES) ?>">×</span>
+    <div class="lightbox-inner">
+      <img id="lightbox-img" data-i18n-alt="lightbox.alt" alt="<?= htmlspecialchars($t('lightbox.alt', 'Full image'), ENT_QUOTES) ?>">
+      <div class="lightbox-caption hidden" id="lightbox-caption">
+        <div class="lb-field" id="lb-prompt-field">
+          <span class="lb-label" data-i18n="result.prompt"><?= htmlspecialchars($t('result.prompt', 'Prompt'), ENT_QUOTES) ?></span>
+          <p class="lb-text" id="lb-prompt"></p>
+        </div>
+        <div class="lb-field hidden" id="lb-negative-field">
+          <span class="lb-label" data-i18n="result.negative"><?= htmlspecialchars($t('result.negative', 'Negative prompt'), ENT_QUOTES) ?></span>
+          <p class="lb-text" id="lb-negative"></p>
+        </div>
+        <div class="lb-actions">
+          <button type="button" class="btn ghost sm" id="lb-copy-prompt" data-i18n="result.copy"><?= htmlspecialchars($t('result.copy', 'Copy prompt'), ENT_QUOTES) ?></button>
+          <button type="button" class="btn ghost sm hidden" id="lb-copy-negative" data-i18n="result.copy.negative"><?= htmlspecialchars($t('result.copy.negative', 'Copy negative'), ENT_QUOTES) ?></button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- Settings modal — separate element/handlers from the image lightbox above.
        Opened by the gear button (#btn-settings). Holds the generation settings that
