@@ -175,6 +175,8 @@
     });
     state.mode = mode;
     if (persist) { try { localStorage.setItem(LS_MODE, mode); } catch (_) {} }
+    // Move the single prompt-host into the mount that matches the new mode.
+    placePrompt();
     // Styles are text-to-image only; re-evaluate on every mode switch (Simple is
     // effectively text-to-image, so styles stay visible there).
     updateStylesVisibility();
@@ -495,6 +497,37 @@
     const effectiveTab = (state.mode === 'simple') ? 'text' : state.activeTab;
     const showStyles = (effectiveTab !== 'inpaint');
     card.classList.toggle('hidden', !showStyles);
+  }
+
+  // ---------------------------------------------------------------- single prompt that follows the tab
+  // There is exactly ONE prompt group in the page (#prompt-host, containing the
+  // single #prompt + #negative_prompt). We MOVE that same DOM node into the mount
+  // point that matches the current mode + active tab. Because it is the very same
+  // element being re-parented (appendChild, not cloned), the typed value — and an
+  // active text caret/focus — are preserved across mode and tab switches.
+  function placePrompt() {
+    const host = $('#prompt-host');
+    if (!host) return;
+    let mount;
+    if (state.mode === 'simple') {
+      // Simple mode: top of the controls (above the hidden tabs box).
+      mount = $('#prompt-mount-simple');
+    } else if (state.activeTab === 'inpaint') {
+      // Advanced + Inpaint: inside the inpaint panel, above the mask editor.
+      mount = $('#prompt-mount-inpaint');
+    } else {
+      // Advanced + Text to Image: inside the text-to-image panel.
+      mount = $('#prompt-mount-text');
+    }
+    if (!mount) return;                       // guard for missing mount points
+    if (host.parentNode === mount) return;    // already in the right place
+    // Preserve focus across the move (re-parenting can drop the caret).
+    const active = document.activeElement;
+    const refocus = (active === $('#prompt') || active === $('#negative_prompt')) ? active : null;
+    mount.appendChild(host);                  // same element -> value is preserved
+    if (refocus && typeof refocus.focus === 'function') {
+      try { refocus.focus({ preventScroll: true }); } catch (_) { refocus.focus(); }
+    }
   }
 
   // ---------------------------------------------------------------- LoRA rows
@@ -1084,6 +1117,8 @@
         state.activeTab = name;
         const panel = $(`.tabpanel[data-panel="${name}"]`);
         if (panel) panel.classList.add('active');
+        // Move the single prompt-host into the now-active tab's mount point.
+        placePrompt();
         // Styles belong to text-to-image only; hide them when Inpaint is active.
         updateStylesVisibility();
       });
@@ -1409,6 +1444,8 @@
     bindTabs();
     bindDropzones();
     bindInpaint();
+    // Place the single prompt-host into the correct mount for the booted mode/tab.
+    placePrompt();
     // Set initial Styles visibility for the current mode / active tab.
     updateStylesVisibility();
 

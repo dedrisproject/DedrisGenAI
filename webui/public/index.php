@@ -131,20 +131,30 @@ foreach (Lang::SUPPORTED as $code) {
     <!-- ============ LEFT COLUMN: controls ============ -->
     <section class="left-col">
 
-      <!-- Core generation -->
-      <div class="card">
-        <div class="card-body">
-          <label class="field">
-            <span class="lbl" data-i18n="field.prompt"><?= htmlspecialchars($t('field.prompt', 'Positive prompt'), ENT_QUOTES) ?></span>
-            <textarea id="prompt" class="prompt-area" data-i18n-placeholder="field.prompt.ph" placeholder="<?= htmlspecialchars($t('field.prompt.ph', ''), ENT_QUOTES) ?>"></textarea>
-          </label>
+      <!-- Shared prompt host. There is exactly ONE positive prompt (#prompt) and
+           ONE negative prompt (#negative_prompt) in the whole page. This single
+           element is MOVED at runtime (placePrompt() in app.js) into whichever
+           mount point matches the current mode + active tab, so its typed value
+           and focus are preserved across mode/tab switches (same DOM node). -->
+      <div id="prompt-host">
+        <div class="card">
+          <div class="card-body">
+            <label class="field">
+              <span class="lbl" data-i18n="field.prompt"><?= htmlspecialchars($t('field.prompt', 'Positive prompt'), ENT_QUOTES) ?></span>
+              <textarea id="prompt" class="prompt-area" data-i18n-placeholder="field.prompt.ph" placeholder="<?= htmlspecialchars($t('field.prompt.ph', ''), ENT_QUOTES) ?>"></textarea>
+            </label>
 
-          <label class="field">
-            <span class="lbl" data-i18n="field.negative"><?= htmlspecialchars($t('field.negative', 'Negative prompt'), ENT_QUOTES) ?></span>
-            <textarea id="negative_prompt" class="neg-area" data-i18n-placeholder="field.negative.ph" placeholder="<?= htmlspecialchars($t('field.negative.ph', ''), ENT_QUOTES) ?>"></textarea>
-          </label>
+            <label class="field">
+              <span class="lbl" data-i18n="field.negative"><?= htmlspecialchars($t('field.negative', 'Negative prompt'), ENT_QUOTES) ?></span>
+              <textarea id="negative_prompt" class="neg-area" data-i18n-placeholder="field.negative.ph" placeholder="<?= htmlspecialchars($t('field.negative.ph', ''), ENT_QUOTES) ?>"></textarea>
+            </label>
+          </div>
         </div>
       </div>
+
+      <!-- Simple-mode mount point: the prompt-host lives here (top of controls,
+           above the tabs box) whenever Simple mode is active. -->
+      <div id="prompt-mount-simple" class="prompt-mount"></div>
 
       <!-- Image-input tabs (advanced only) — the prominent MAIN box.
            Only the two input modes that are actually wired to the engine are
@@ -160,11 +170,18 @@ foreach (Lang::SUPPORTED as $code) {
 
         <!-- Text to image (default) -->
         <div class="tabpanel active" data-panel="text">
+          <!-- Advanced + Text-to-Image mount point: the shared prompt-host is
+               moved in here so prompt + negative appear within this tab. -->
+          <div id="prompt-mount-text" class="prompt-mount"></div>
           <p class="muted" style="margin:0" data-i18n="panel.text.desc"><?= htmlspecialchars($t('panel.text.desc', ''), ENT_QUOTES) ?></p>
         </div>
 
         <!-- Inpaint -->
         <div class="tabpanel" data-panel="inpaint">
+          <!-- Advanced + Inpaint mount point: the shared prompt-host is moved in
+               here, ABOVE the mask editor, so you can describe what to paint. -->
+          <div id="prompt-mount-inpaint" class="prompt-mount"></div>
+
           <!-- upload / drop zone (hidden once an image is loaded) -->
           <div class="dropzone" id="inpaint-dropzone"><div class="icon">🎨</div><div data-i18n="inpaint.upload"><?= htmlspecialchars($t('inpaint.upload', 'Drop or click to upload the image to edit'), ENT_QUOTES) ?></div></div>
           <input type="file" accept="image/*" class="hidden" id="inpaint-file">

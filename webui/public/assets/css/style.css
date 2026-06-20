@@ -283,6 +283,21 @@ select { appearance: none;
 .prompt-area { min-height: 96px; }
 .neg-area { min-height: 56px; }
 
+/* Single prompt host (#prompt-host) gets MOVED between mount points depending on
+   mode + active tab (see placePrompt() in app.js). When it lives inside a tab
+   panel its inner card sits flush with the panel, so drop the standalone card
+   chrome there and add a little gap before whatever follows (panel text / mask
+   editor / dropzone). At the top-level (Simple) mount it keeps its normal card. */
+.prompt-mount:empty { display: none; }
+.tabpanel .prompt-mount #prompt-host > .card {
+  margin: 0 0 14px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+.tabpanel .prompt-mount #prompt-host > .card > .card-body { padding: 0; }
+.tabpanel .prompt-mount #prompt-host .field:last-child { margin-bottom: 0; }
+
 /* radio / segmented controls */
 .seg {
   display: inline-flex; flex-wrap: wrap; gap: 6px;
