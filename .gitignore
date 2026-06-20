@@ -1,0 +1,85 @@
+__pycache__
+*.ckpt
+*.safetensors
+*.pth
+*.pt
+*.bin
+*.patch
+*.backup
+*.corrupted
+*.partial
+*.onnx
+sorted_styles.json
+hash_cache.txt
+/input
+/cache
+/language/default.json
+/test_imgs
+config.txt
+config_modification_tutorial.txt
+user_path_config.txt
+user_path_config-deprecated.txt
+/modules/*.png
+/repositories
+/dedris_env
+/venv
+/tmp
+/ui-config.json
+/outputs
+/config.json
+/log
+/webui.settings.bat
+/embeddings
+/styles.csv
+/params.txt
+/styles.csv.bak
+/webui-user.bat
+/webui-user.sh
+/interrogate
+/user.css
+/.idea
+/notification.ogg
+/notification.mp3
+/SwinIR
+/textual_inversion
+.vscode
+/extensions
+/test/stdout.txt
+/test/stderr.txt
+/cache.json*
+/config_states/
+/node_modules
+/package-lock.json
+/.coverage*
+/auth.json
+.DS_Store
+
+# --- DedrisGenAI structure ---
+# Generated outputs
+/engine/outputs/
+/engine/outputs
+/outputs/
+# Engine local config / caches
+/engine/config.txt
+/engine/config_modification_tutorial.txt
+/engine/user_path_config.txt
+/engine/auth.json
+# Provisioned portable runtimes (auto-downloaded on first launch, never committed)
+/runtimes/python/
+/runtimes/php/bin/
+/runtimes/php/*/php
+/runtimes/php/*/php.exe
+/runtimes/cache/
+# Model weights live here but are covered by the *.safetensors/*.bin/*.pth rules above
+/engine/models/**/*.safetensors
+/engine/models/**/*.bin
+/engine/models/**/*.pth
+/engine/models/**/*.ckpt
+/engine/models/**/*.pt
+# PHP UI runtime artifacts
+/webui/runtime/
+/webui/*.log
+
+# macOS AppleDouble (external/exFAT volumes)
+._*
+**/._*
