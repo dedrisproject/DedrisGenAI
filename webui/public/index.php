@@ -165,7 +165,7 @@ foreach (Lang::SUPPORTED as $code) {
       <div class="card adv-only input-tabs-card">
         <div class="tabs" id="input-tabs" role="tablist">
           <button class="tab active" data-tab="text"     role="tab" data-i18n="tab.text"><?= htmlspecialchars($t('tab.text', 'Text to Image'), ENT_QUOTES) ?></button>
-          <button class="tab" data-tab="inpaint"  role="tab" data-i18n="tab.inpaint"><?= htmlspecialchars($t('tab.inpaint', 'Inpaint'), ENT_QUOTES) ?></button>
+          <button class="tab" data-tab="inpaint"  role="tab" data-i18n="tab.inpaint"><?= htmlspecialchars($t('tab.inpaint', 'Edit Image'), ENT_QUOTES) ?></button>
         </div>
 
         <!-- Text to image (default) -->
@@ -178,6 +178,11 @@ foreach (Lang::SUPPORTED as $code) {
 
         <!-- Inpaint -->
         <div class="tabpanel" data-panel="inpaint">
+          <div class="tab-intro">
+            <h3 data-i18n="inpaint.title"><?= htmlspecialchars($t('inpaint.title', 'Edit Image'), ENT_QUOTES) ?></h3>
+            <p class="note" data-i18n="inpaint.intro"><?= htmlspecialchars($t('inpaint.intro', 'Upload an image, paint over the area you want to change, then describe what should appear there and press Generate. Only the painted area is regenerated — the rest of the image stays the same.'), ENT_QUOTES) ?></p>
+          </div>
+
           <!-- Advanced + Inpaint mount point: the shared prompt-host is moved in
                here, ABOVE the mask editor, so you can describe what to paint. -->
           <div id="prompt-mount-inpaint" class="prompt-mount"></div>
