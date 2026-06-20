@@ -3,7 +3,7 @@ name: Docker image build
 on:
   push:
     branches:
-      - main
+      - master
     tags:
       - v*
 
@@ -35,13 +35,13 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-            type=edge,branch=main
+            type=edge,branch=master
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: ./Dockerfile
+          context: engine
+          file: engine/docker/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

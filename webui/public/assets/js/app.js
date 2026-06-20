@@ -642,13 +642,14 @@
     updateStylesVisibility();
   }
 
-  // The Styles picker belongs to Text-to-Image only. It is visible when the
-  // active input tab is Text-to-Image and hidden for Edit Image (inpaint) and
-  // Create variants (uov). Re-evaluated on every tab change.
+  // The Styles picker belongs to Text-to-Image only. It is visible only when the
+  // active input tab is Text-to-Image and hidden for every other tab (Edit Image,
+  // Create variants, Image Prompt, Describe and Metadata). Re-evaluated on every
+  // tab change.
   function updateStylesVisibility() {
     const card = $('#styles-card');
     if (!card) return;
-    const showStyles = (state.activeTab !== 'inpaint' && state.activeTab !== 'uov');
+    const showStyles = (state.activeTab === 'text');
     card.classList.toggle('hidden', !showStyles);
   }
 
@@ -668,8 +669,13 @@
     } else if (state.activeTab === 'uov') {
       // Create variants: inside the uov panel.
       mount = $('#prompt-mount-uov');
+    } else if (state.activeTab === 'ip') {
+      // Image Prompt: inside the ip panel, above the reference-image slots.
+      mount = $('#prompt-mount-ip');
     } else {
-      // Text to Image: inside the text-to-image panel.
+      // Text to Image — and the utility tabs (describe / metadata), which act and
+      // then switch back to Text. Mounting the single prompt-host in the text
+      // mount keeps the one-#prompt invariant and a valid host while they are open.
       mount = $('#prompt-mount-text');
     }
     if (!mount) return;                       // guard for missing mount points
@@ -1431,6 +1437,19 @@
       uovExtra = uovPayload();
     }
 
+    // Image Prompt (ip) tab: at least one reference image is required. Block with
+    // a localized hint if none is loaded, otherwise send input_mode:"ip" +
+    // ip_images:[{image,type,stop,weight}, ...] alongside the main prompt.
+    let ipExtra = null;
+    if (state.activeTab === 'ip') {
+      if (!ipHasImage()) {
+        showBannerKey('warn', 'ip.need_image', null, false);
+        setTimeout(hideBanner, 4000);
+        return;
+      }
+      ipExtra = ipPayload();
+    }
+
     setGenerating(true);
     startTimers();
     setIndeterminate(true);                 // start animated immediately
@@ -1441,6 +1460,7 @@
       const params = gatherParams();
       if (inpaintExtra) Object.assign(params, inpaintExtra);
       if (uovExtra) Object.assign(params, uovExtra);
+      if (ipExtra) Object.assign(params, ipExtra);
       // Remember the prompt + negative used, so each resulting image can carry
       // them in the feed (and the lightbox can show + copy them).
       state.runPrompt = params.prompt || '';
@@ -2113,6 +2133,346 @@
     };
   }
 
+  // ---------------------------------------------------------------- image prompt (ip)
+  // A real generation mode. Up to IP_SLOTS reference images, each with a Type
+  // (ImagePrompt | PyraCanny | CPDS | FaceSwap) plus Stop and Weight sliders.
+  // On Generate (with the ip tab active and >=1 image loaded) we send
+  //   input_mode:"ip", ip_images:[{image,type,stop,weight}, ...]
+  // using native-resolution data URLs and the MAIN positive/negative prompt.
+  const IP_SLOTS = 2;
+  // sensible per-type defaults: [stop, weight]
+  const IP_DEFAULTS = {
+    ImagePrompt: [0.5, 0.6],
+    FaceSwap:    [0.9, 0.75],
+    PyraCanny:   [0.5, 1.0],
+    CPDS:        [0.5, 1.0],
+  };
+  // one entry per slot: { img, natW, natH }
+  const ipSlots = [];
+
+  function buildIpSlots() {
+    const host = $('#ip-slots');
+    const tpl = $('#ip-slot-tpl');
+    if (!host || !tpl) return;
+    host.innerHTML = '';
+    ipSlots.length = 0;
+    for (let i = 0; i < IP_SLOTS; i++) {
+      const node = tpl.content.firstElementChild.cloneNode(true);
+      host.append(node);
+      const slot = { img: null, natW: 0, natH: 0, root: node };
+      ipSlots.push(slot);
+      bindIpSlot(node, slot);
+    }
+    // newly cloned nodes carry data-i18n attributes; translate them in place.
+    applyTranslations(host);
+  }
+
+  function bindIpSlot(node, slot) {
+    const dz = $('.ip-dropzone', node);
+    const file = $('.ip-file', node);
+    if (dz && file) {
+      dz.addEventListener('click', () => file.click());
+      dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('drag'); });
+      dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+      dz.addEventListener('drop', (e) => {
+        e.preventDefault(); dz.classList.remove('drag');
+        const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f) loadIpFile(node, slot, f);
+      });
+      file.addEventListener('change', () => { if (file.files[0]) loadIpFile(node, slot, file.files[0]); });
+    }
+
+    const typeSel = $('.ip-type', node);
+    const stop = $('.ip-stop', node);
+    const stopOut = $('.ip-stop-out', node);
+    const weight = $('.ip-weight', node);
+    const weightOut = $('.ip-weight-out', node);
+    const syncOut = () => {
+      if (stopOut) stopOut.textContent = Number(stop.value).toFixed(2);
+      if (weightOut) weightOut.textContent = Number(weight.value).toFixed(2);
+    };
+    if (stop) stop.addEventListener('input', syncOut);
+    if (weight) weight.addEventListener('input', syncOut);
+    // changing the Type resets Stop + Weight to that type's sensible defaults.
+    if (typeSel) typeSel.addEventListener('change', () => {
+      const def = IP_DEFAULTS[typeSel.value] || IP_DEFAULTS.ImagePrompt;
+      if (stop) stop.value = def[0];
+      if (weight) weight.value = def[1];
+      syncOut();
+    });
+    syncOut();
+  }
+
+  function loadIpFile(node, slot, file) {
+    if (!file || !/^image\//.test(file.type)) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => setupIpImage(node, slot, img);
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function setupIpImage(node, slot, img) {
+    slot.img = img;
+    slot.natW = img.naturalWidth || img.width;
+    slot.natH = img.naturalHeight || img.height;
+    if (!slot.natW || !slot.natH) { slot.img = null; return; }
+    const preview = $('.ip-preview', node);
+    const previewImg = $('.ip-preview-img', node);
+    const dz = $('.ip-dropzone', node);
+    if (previewImg) { previewImg.src = img.src; previewImg.alt = ''; }
+    if (preview) preview.classList.remove('hidden');
+    if (dz) dz.classList.add('hidden');
+  }
+
+  function ipHasImage() { return ipSlots.some((s) => !!s.img); }
+
+  // Build the generate payload pieces for Image Prompt at native resolution.
+  // Uses the MAIN positive/negative prompt, which the engine already applies.
+  function ipPayload() {
+    const images = [];
+    ipSlots.forEach((slot) => {
+      if (!slot.img) return;
+      const c = document.createElement('canvas');
+      c.width = slot.natW; c.height = slot.natH;
+      c.getContext('2d').drawImage(slot.img, 0, 0, slot.natW, slot.natH);
+      const node = slot.root;
+      const type = ($('.ip-type', node) || {}).value || 'ImagePrompt';
+      const stop = Number(($('.ip-stop', node) || {}).value);
+      const weight = Number(($('.ip-weight', node) || {}).value);
+      images.push({
+        image: c.toDataURL('image/png'),
+        type,
+        stop: Number.isFinite(stop) ? stop : 0.5,
+        weight: Number.isFinite(weight) ? weight : 0.6,
+      });
+    });
+    if (!images.length) return null;
+    return { input_mode: 'ip', ip_images: images };
+  }
+
+  // ---------------------------------------------------------------- describe (utility)
+  // Reads an uploaded image and asks the engine for a suggested prompt
+  // (POST api/describe {image, types}). On success the returned prompt is placed
+  // in the main #prompt textarea and the UI switches to Text-to-Image so the user
+  // sees it. This tab never generates on its own.
+  const describeState = { img: null, busy: false };
+
+  function bindDescribe() {
+    const dz = $('#describe-dropzone');
+    const file = $('#describe-file');
+    if (dz && file) {
+      dz.addEventListener('click', () => file.click());
+      dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('drag'); });
+      dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+      dz.addEventListener('drop', (e) => {
+        e.preventDefault(); dz.classList.remove('drag');
+        const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f) loadDescribeFile(f);
+      });
+      file.addEventListener('change', () => { if (file.files[0]) loadDescribeFile(file.files[0]); });
+    }
+    const btn = $('#describe-btn');
+    if (btn) btn.addEventListener('click', onDescribe);
+  }
+
+  function loadDescribeFile(file) {
+    if (!file || !/^image\//.test(file.type)) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      describeState.img = reader.result;   // native-resolution data URL
+      const preview = $('#describe-preview');
+      const previewImg = $('#describe-preview-img');
+      const dz = $('#describe-dropzone');
+      if (previewImg) { previewImg.src = reader.result; previewImg.alt = ''; }
+      if (preview) preview.classList.remove('hidden');
+      if (dz) dz.classList.add('hidden');
+      setDescribeMsg('', null);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function setDescribeMsg(text, kind) {
+    const msg = $('#describe-msg');
+    if (!msg) return;
+    msg.textContent = text || '';
+    msg.className = 'describe-msg note' + (kind ? ' ' + kind : '') + (text ? '' : ' hidden');
+  }
+
+  function describeTypes() {
+    const checked = $$('.describe-method:checked').map((c) => c.value);
+    return checked.length ? checked : ['Photograph'];
+  }
+
+  async function onDescribe() {
+    if (describeState.busy) return;
+    if (!describeState.img) {
+      setDescribeMsg(t('describe.need_image'), 'err');
+      return;
+    }
+    const btn = $('#describe-btn');
+    describeState.busy = true;
+    if (btn) btn.disabled = true;
+    setDescribeMsg(t('describe.running'), null);
+    let data;
+    try {
+      data = await apiPost('describe', { image: describeState.img, types: describeTypes() });
+    } catch (e) {
+      const detail = (e && e.message) ? e.message : t('progress.error.unknown');
+      setDescribeMsg(t('describe.error', { msg: detail }), 'err');
+      describeState.busy = false;
+      if (btn) btn.disabled = false;
+      return;
+    }
+    describeState.busy = false;
+    if (btn) btn.disabled = false;
+    const prompt = data && typeof data.prompt === 'string' ? data.prompt : '';
+    if (!prompt) {
+      setDescribeMsg(t('describe.error', { msg: t('progress.error.unknown') }), 'err');
+      return;
+    }
+    const promptEl = $('#prompt');
+    if (promptEl) promptEl.value = prompt;
+    setDescribeMsg(t('describe.done'), 'ok');
+    // Switch to Text-to-Image so the user sees the freshly written prompt.
+    activateInputTab('text');
+    refreshEstimate();
+  }
+
+  // ---------------------------------------------------------------- metadata (utility)
+  // Reads the generation parameters embedded in an image previously created by
+  // DedrisGenAI (POST api/read_metadata {image}) and applies them to the UI
+  // controls, then switches to Text-to-Image. This tab never generates on its own.
+  const metadataState = { img: null, busy: false };
+
+  function bindMetadata() {
+    const dz = $('#metadata-dropzone');
+    const file = $('#metadata-file');
+    if (dz && file) {
+      dz.addEventListener('click', () => file.click());
+      dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('drag'); });
+      dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+      dz.addEventListener('drop', (e) => {
+        e.preventDefault(); dz.classList.remove('drag');
+        const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f) loadMetadataFile(f);
+      });
+      file.addEventListener('change', () => { if (file.files[0]) loadMetadataFile(file.files[0]); });
+    }
+    const btn = $('#metadata-btn');
+    if (btn) btn.addEventListener('click', onReadMetadata);
+  }
+
+  function loadMetadataFile(file) {
+    if (!file || !/^image\//.test(file.type)) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      metadataState.img = reader.result;
+      const preview = $('#metadata-preview');
+      const previewImg = $('#metadata-preview-img');
+      const dz = $('#metadata-dropzone');
+      if (previewImg) { previewImg.src = reader.result; previewImg.alt = ''; }
+      if (preview) preview.classList.remove('hidden');
+      if (dz) dz.classList.add('hidden');
+      setMetadataMsg('', null);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function setMetadataMsg(text, kind) {
+    const msg = $('#metadata-msg');
+    if (!msg) return;
+    msg.textContent = text || '';
+    msg.className = 'metadata-msg note' + (kind ? ' ' + kind : '') + (text ? '' : ' hidden');
+  }
+
+  // Apply a flat params object (the engine's generate-body field names) to the UI
+  // controls, reusing the same setter helpers preset-loading uses. Recognised:
+  // prompt, negative_prompt, performance, aspect_ratio, seed, guidance_scale,
+  // sharpness, sampler, scheduler, base_model, refiner_model, refiner_switch,
+  // clip_skip, vae, steps_override, styles/style_selections, loras.
+  function applyMetadataParams(params) {
+    const p = params || {};
+    const has = (k) => Object.prototype.hasOwnProperty.call(p, k) && p[k] !== undefined && p[k] !== null;
+    const setVal = (id, v) => { const n = document.getElementById(id); if (n != null && v !== undefined && v !== null) n.value = v; };
+    const setRange = (id, v) => { const n = document.getElementById(id); if (n && v !== undefined && v !== null) { n.value = v; n.dispatchEvent(new Event('input')); } };
+
+    if (has('prompt')) setVal('prompt', p.prompt);
+    if (has('negative_prompt')) setVal('negative_prompt', p.negative_prompt);
+    if (has('performance')) setSeg('performance', p.performance);
+    if (has('aspect_ratio')) setVal('aspect_ratio', p.aspect_ratio);
+    if (has('seed')) {
+      const seedRandom = $('#seed_random');
+      const seed = $('#seed');
+      const n = Number(p.seed);
+      if (Number.isFinite(n) && n >= 0) {
+        if (seedRandom) { seedRandom.checked = false; seedRandom.dispatchEvent(new Event('change')); }
+        if (seed) seed.value = n;
+      }
+    }
+    if (has('guidance_scale')) setRange('guidance_scale', p.guidance_scale);
+    if (has('sharpness')) setRange('sharpness', p.sharpness);
+    if (has('sampler')) setVal('sampler', p.sampler);
+    if (has('scheduler')) setVal('scheduler', p.scheduler);
+    if (has('base_model')) {
+      const sel = $('#base_model');
+      if (sel) {
+        if (!Array.from(sel.options).some((o) => o.value === p.base_model)) sel.append(el('option', { value: p.base_model }, p.base_model));
+        sel.value = p.base_model;
+      }
+    }
+    if (has('refiner_model')) {
+      const sel = $('#refiner_model');
+      if (sel) {
+        if (!Array.from(sel.options).some((o) => o.value === p.refiner_model)) sel.append(el('option', { value: p.refiner_model }, p.refiner_model));
+        sel.value = p.refiner_model;
+      }
+    }
+    if (has('refiner_switch')) setRange('refiner_switch', p.refiner_switch);
+    if (has('clip_skip')) setRange('clip_skip', p.clip_skip);
+    if (has('vae')) setVal('vae', p.vae);
+    if (has('steps_override')) setVal('steps_override', p.steps_override);
+    // styles may arrive under either key
+    const styles = has('style_selections') ? p.style_selections : (has('styles') ? p.styles : null);
+    if (Array.isArray(styles)) setStyles(styles);
+    if (has('loras') && Array.isArray(p.loras)) setLoras(p.loras);
+  }
+
+  async function onReadMetadata() {
+    if (metadataState.busy) return;
+    if (!metadataState.img) {
+      setMetadataMsg(t('metadata.need_image'), 'err');
+      return;
+    }
+    const btn = $('#metadata-btn');
+    metadataState.busy = true;
+    if (btn) btn.disabled = true;
+    setMetadataMsg(t('metadata.running'), null);
+    let data;
+    try {
+      data = await apiPost('read_metadata', { image: metadataState.img });
+    } catch (e) {
+      const detail = (e && e.message) ? e.message : t('progress.error.unknown');
+      setMetadataMsg(t('metadata.error', { msg: detail }), 'err');
+      metadataState.busy = false;
+      if (btn) btn.disabled = false;
+      return;
+    }
+    metadataState.busy = false;
+    if (btn) btn.disabled = false;
+    if (!data || !data.found) {
+      setMetadataMsg(t('metadata.none'), 'err');
+      return;
+    }
+    applyMetadataParams(data.params || {});
+    setMetadataMsg(t('metadata.loaded'), 'ok');
+    // Switch to Text-to-Image so the user sees the loaded prompt + settings.
+    activateInputTab('text');
+    refreshEstimate();
+  }
+
   // ---------------------------------------------------------------- range / input bindings
   function bindControls() {
     bindRange('image_number', (v) => String(parseInt(v)));
@@ -2120,7 +2480,6 @@
     bindRange('guidance_scale', (v) => Number(v).toFixed(1));
     bindRange('sharpness', (v) => Number(v).toFixed(1));
     bindRange('clip_skip', (v) => String(parseInt(v)));
-    bindRange('ip_weight', (v) => Number(v).toFixed(2));
 
     $('#seed_random').addEventListener('change', (e) => { $('#seed').disabled = e.target.checked; });
 
@@ -2201,6 +2560,9 @@
     bindDropzones();
     bindInpaint();
     bindUov();
+    buildIpSlots();
+    bindDescribe();
+    bindMetadata();
     // Place the single prompt-host into the correct mount for the booted mode/tab.
     placePrompt();
     // Set initial Styles visibility for the current mode / active tab.

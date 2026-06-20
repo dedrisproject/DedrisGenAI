@@ -45,6 +45,8 @@ Endpoints (all JSON, see docs/ARCHITECTURE.md):
     POST /api/generate
     GET  /api/progress?task_id=ID
     POST /api/stop
+    POST /api/describe        (image -> prompt, webui's Describe feature)
+    POST /api/read_metadata   (read embedded generation metadata from an image)
     POST /api/add_lora        (download a LoRA .safetensors from a URL)
     GET  /api/lora_status     (byte progress of the add-LoRA download)
     GET  /outputs/<path>
@@ -597,8 +599,8 @@ def build_async_task_args(body):
       14  refiner_switch                   body / preset
       15..(12+3*N)  lora rows: [enabled,name,weight] x default_max_lora_number
                                            body / preset (padded with True/None/1.0)
-          input_image_checkbox             False  (no image-input via API yet)
-          current_tab                      'uov'  (webui default tab key)
+          input_image_checkbox             True iff inpaint/uov/ip input present
+          current_tab                      'ip'|'inpaint'|'uov' per input_mode
           uov_method                       config.default_uov_method (Disabled)
           uov_input_image                  None
           outpaint_selections              [] (empty)
@@ -651,7 +653,9 @@ def build_async_task_args(body):
           (if not --disable-metadata)   metadata_scheme
                                            config.default_metadata_scheme
           ip_ctrls: per controlnet image (default_controlnet_image_count):
-                   [ip_image(None), ip_stop, ip_weight, ip_type] x N
+                   [ip_image, ip_stop, ip_weight, ip_type] x N
+                   (filled from body['ip_images'] when input_mode=='ip', else
+                   neutral defaults; total stays 4 x N)
           debugging_dino                   False
           dino_erode_or_dilate             0
           debugging_enhance_masks_checkbox False
@@ -742,10 +746,14 @@ def build_async_task_args(body):
         args.append(name)
         args.append(weight)
 
-    # image-input controls. Two modes are wired:
+    # image-input controls. Three modes are wired:
     #  - "inpaint": source image + brushed mask (white = region to regenerate).
     #  - "uov" (Upscale/Vary, used for "create variants from image"): a source image
     #    + a uov_method like "Vary (Subtle)" / "Vary (Strong)" / "Upscale (...)".
+    #  - "ip" (Image Prompt): up to default_controlnet_image_count reference images,
+    #    each with a type (ImagePrompt / PyraCanny / CPDS / FaceSwap), stop & weight.
+    #    These do NOT use uov_input_image / inpaint_input_image; they fill the
+    #    ip_ctrls block far below. We only decode them here and set the tab/checkbox.
     # The UI sends the image(s) as base64 data URLs; we decode them into what the
     # worker expects and switch to the matching tab.
     mode = str(body.get("input_mode", ""))
@@ -753,11 +761,39 @@ def build_async_task_args(body):
     inpaint_msk = None
     uov_img = None
     uov_method = config.default_uov_method
+    ip_entries = []   # decoded Image-Prompt slots: [{"image": np, "type", "stop", "weight"}]
 
     if mode == "inpaint":
         inpaint_img = _data_url_to_np(body.get("inpaint_image"), "RGB")
         if inpaint_img is not None:
             inpaint_msk = _data_url_to_np(body.get("inpaint_mask"), "RGB")
+    elif mode == "ip":
+        # body["ip_images"] = list of {image:dataURL, type, stop, weight}. Decode each
+        # to numpy; entries whose image fails to decode are skipped. The order is
+        # preserved so slot i of ip_ctrls maps to ip_images[i].
+        ip_src = body.get("ip_images")
+        if isinstance(ip_src, list):
+            for entry in ip_src:
+                if not isinstance(entry, dict):
+                    continue
+                img = _data_url_to_np(entry.get("image"), "RGB")
+                if img is None:
+                    continue
+                ip_type = entry.get("type")
+                if ip_type not in set(flags.ip_list):
+                    ip_type = flags.default_ip
+                # default (stop, weight) for the chosen type, overridden per-entry.
+                d_stop, d_weight = flags.default_parameters.get(
+                    ip_type, flags.default_parameters[flags.default_ip])
+                try:
+                    stop = float(entry["stop"]) if entry.get("stop") is not None else float(d_stop)
+                except (TypeError, ValueError):
+                    stop = float(d_stop)
+                try:
+                    weight = float(entry["weight"]) if entry.get("weight") is not None else float(d_weight)
+                except (TypeError, ValueError):
+                    weight = float(d_weight)
+                ip_entries.append({"image": img, "type": ip_type, "stop": stop, "weight": weight})
     elif mode in ("uov", "variants", "vary", "upscale"):
         uov_img = _data_url_to_np(body.get("uov_image") or body.get("image"), "RGB")
         if uov_img is not None:
@@ -766,6 +802,7 @@ def build_async_task_args(body):
 
     do_inpaint = inpaint_img is not None
     do_uov = uov_img is not None
+    do_ip = len(ip_entries) > 0
     if do_inpaint:
         # The worker reads inpaint_input_image['mask'][:, :, 0], so the mask must be a
         # HxWx3 array matching the image. Synthesize/resize defensively.
@@ -780,8 +817,15 @@ def build_async_task_args(body):
             except Exception:
                 inpaint_msk = np.zeros_like(inpaint_img)
 
-    args.append(bool(do_inpaint or do_uov))            # input_image_checkbox
-    args.append("inpaint" if do_inpaint else "uov")     # current_tab
+    args.append(bool(do_inpaint or do_uov or do_ip))    # input_image_checkbox
+    # current_tab key the worker keys preprocessing off of ('ip'|'inpaint'|'uov').
+    if do_ip:
+        current_tab = "ip"
+    elif do_inpaint:
+        current_tab = "inpaint"
+    else:
+        current_tab = "uov"
+    args.append(current_tab)                             # current_tab
     args.append(uov_method if do_uov else config.default_uov_method)  # uov_method
     args.append(uov_img if do_uov else None)            # uov_input_image
     args.append([])                                     # outpaint_selections
@@ -848,12 +892,23 @@ def build_async_task_args(body):
         args.append(bool(config.default_save_metadata_to_images))  # save_metadata_to_images
         args.append(config.default_metadata_scheme)                # metadata_scheme
 
-    # ip_ctrls: 4 fields per controlnet image (image, stop, weight, type)
+    # ip_ctrls: 4 fields per controlnet image (image, stop, weight, type).
+    # Always emits exactly 4 * default_controlnet_image_count fields so the
+    # arg-list length is unchanged. For Image-Prompt mode, slot i (0-based i-1)
+    # is filled from ip_entries when present; otherwise the neutral webui
+    # defaults (None image + per-slot stop/weight/type) are used.
     for i in range(1, config.default_controlnet_image_count + 1):
-        args.append(None)                                    # ip_image
-        args.append(config.default_ip_stop_ats.get(i, flags.default_parameters[flags.default_ip][0]))   # ip_stop
-        args.append(config.default_ip_weights.get(i, flags.default_parameters[flags.default_ip][1]))    # ip_weight
-        args.append(config.default_ip_types.get(i, flags.default_ip))                                    # ip_type
+        entry = ip_entries[i - 1] if do_ip and (i - 1) < len(ip_entries) else None
+        if entry is not None:
+            args.append(entry["image"])                      # ip_image
+            args.append(entry["stop"])                        # ip_stop
+            args.append(entry["weight"])                      # ip_weight
+            args.append(entry["type"])                        # ip_type
+        else:
+            args.append(None)                                # ip_image
+            args.append(config.default_ip_stop_ats.get(i, flags.default_parameters[flags.default_ip][0]))   # ip_stop
+            args.append(config.default_ip_weights.get(i, flags.default_parameters[flags.default_ip][1]))    # ip_weight
+            args.append(config.default_ip_types.get(i, flags.default_ip))                                    # ip_type
 
     # dino / enhance masks
     args.append(False)              # debugging_dino
@@ -1600,6 +1655,166 @@ def stop_task(task_id):
 
 
 # ---------------------------------------------------------------------------
+# Describe (image -> prompt) and metadata extraction
+# ---------------------------------------------------------------------------
+
+def describe_image(body):
+    """Replicate webui.trigger_describe: turn an uploaded image into a prompt.
+
+    Request body
+    ------------
+      { "image": <dataURL|base64>, "types": ["Photograph"|"Art/Anime", ...] }
+    ``types`` is a subset of flags.describe_types; defaults to ["Photograph"].
+
+    Returns
+    -------
+      { "prompt": "<comma-joined interrogation(s)>" }
+
+    Heavy interrogator models are imported lazily INSIDE this function (exactly as
+    webui.trigger_describe imports them) so module import stays cheap and import-
+    safe when those models are absent."""
+    bootstrap()
+    img = _data_url_to_np(body.get("image"), "RGB")
+    if img is None:
+        raise ValueError("a valid 'image' (data URL or base64) is required")
+
+    # Validate/normalize requested describe types against flags.describe_types.
+    requested = body.get("types")
+    if isinstance(requested, str):
+        requested = [requested]
+    if not isinstance(requested, list) or not requested:
+        requested = [flags.describe_type_photo]
+    modes = [t for t in requested if t in set(flags.describe_types)]
+    if not modes:
+        modes = [flags.describe_type_photo]
+
+    describe_prompts = []
+    if flags.describe_type_photo in modes:
+        from extras.interrogate import default_interrogator as di_photo
+        describe_prompts.append(di_photo(img))
+    if flags.describe_type_anime in modes:
+        from extras.wd14tagger import default_interrogator as di_anime
+        describe_prompts.append(di_anime(img))
+
+    prompt = ", ".join(p for p in describe_prompts if p)
+    return {"prompt": prompt}
+
+
+# Map a parsed-metadata dict (from meta_parser.to_json) onto OUR generate-body
+# field names. Each generate-field maps to a tuple of accepted source keys, tried
+# in order; the first present non-empty value wins.
+_META_KEY_ALIASES = {
+    "prompt": ("prompt",),
+    "negative_prompt": ("negative_prompt",),
+    "performance": ("performance",),
+    "aspect_ratio": ("aspect_ratio", "resolution"),
+    "seed": ("seed",),
+    "guidance_scale": ("guidance_scale", "cfg", "cfg_scale"),
+    "sharpness": ("sharpness",),
+    "sampler": ("sampler", "sampler_name"),
+    "scheduler": ("scheduler", "scheduler_name"),
+    "base_model": ("base_model", "checkpoint", "model"),
+    "refiner_model": ("refiner_model", "refiner"),
+    "refiner_switch": ("refiner_switch",),
+    "clip_skip": ("clip_skip",),
+    "vae": ("vae",),
+    "steps_override": ("steps_override", "steps", "overwrite_step"),
+    "style_selections": ("style_selections", "styles"),
+}
+
+
+def _map_metadata_to_body(parsed):
+    """Project a parsed metadata dict onto our generate-body field names.
+
+    style_selections is normalized to a python list (the parsers stringify it as
+    "['A', 'B']"); loras are collected from any lora_combined_N entries into a
+    [name, weight] list. Everything else is copied verbatim when present and
+    non-empty. Returns a plain dict (never raises on a malformed value)."""
+    mapped = {}
+    if not isinstance(parsed, dict):
+        return mapped
+
+    for field, aliases in _META_KEY_ALIASES.items():
+        for src in aliases:
+            if src in parsed and parsed[src] not in (None, "", "None"):
+                mapped[field] = parsed[src]
+                break
+
+    # styles/style_selections: parsers store this as a stringified list.
+    if "style_selections" in mapped and isinstance(mapped["style_selections"], str):
+        try:
+            import ast
+            val = ast.literal_eval(mapped["style_selections"])
+            mapped["style_selections"] = list(val) if isinstance(val, (list, tuple)) else []
+        except Exception:
+            mapped["style_selections"] = []
+
+    # loras: gather lora_combined_N ("<file> : <weight>") into [name, weight] rows.
+    loras = []
+    for key in sorted(k for k in parsed if isinstance(k, str) and k.startswith("lora_combined_")):
+        val = parsed.get(key)
+        if not val or val in ("None",):
+            continue
+        try:
+            name, weight = str(val).rsplit(" : ", 1)
+            loras.append([name.strip(), float(weight)])
+        except Exception:
+            loras.append([str(val), 1.0])
+    if loras:
+        mapped["loras"] = loras
+
+    return mapped
+
+
+def read_image_metadata(body):
+    """Extract DedrisGenAI/A1111 generation metadata embedded in an image.
+
+    Request body
+    ------------
+      { "image": <dataURL|base64> }
+
+    Returns
+    -------
+      {
+        "found":  bool,          # true iff readable generation metadata was present
+        "params": { <mapped> },  # our generate-body field names (see _map_metadata_to_body)
+        "raw":    { <parsed> }   # the original parser.to_json(...) dict, verbatim
+      }
+    On no metadata (or any failure) returns {"found": false, "params": {}, "raw": {}}.
+    Never raises — meta_parser.read_info_from_image expects a PIL image, which we
+    decode here defensively."""
+    bootstrap()
+    try:
+        import base64 as _b64
+        from io import BytesIO
+        from PIL import Image
+        data_url = body.get("image")
+        if not data_url or not isinstance(data_url, str):
+            return {"found": False, "params": {}, "raw": {}}
+        raw_b = data_url.split(",", 1)[1] if data_url.startswith("data:") else data_url
+        pil_image = Image.open(BytesIO(_b64.b64decode(raw_b)))
+        # Force a load so .info / .getexif() are populated before BytesIO closes.
+        pil_image.load()
+    except Exception:
+        return {"found": False, "params": {}, "raw": {}}
+
+    try:
+        import modules.meta_parser as meta_parser
+        params, scheme = meta_parser.read_info_from_image(pil_image)
+        if params is None or scheme is None:
+            return {"found": False, "params": {}, "raw": {}}
+        parser = meta_parser.get_metadata_parser(scheme)
+        data = parser.to_json(params)
+        if not isinstance(data, dict) or not data:
+            return {"found": False, "params": {}, "raw": {}}
+        return {"found": True, "params": _map_metadata_to_body(data), "raw": data}
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        return {"found": False, "params": {}, "raw": {}}
+
+
+# ---------------------------------------------------------------------------
 # FastAPI application
 # ---------------------------------------------------------------------------
 
@@ -1689,6 +1904,56 @@ def create_app():
         if not task_id:
             return JSONResponse(status_code=400, content={"error": "task_id required"})
         return stop_task(task_id)
+
+    @app.post("/api/describe")
+    async def describe(request: Request):
+        """Turn an uploaded image into a prompt (webui's "Describe" feature).
+
+        Request body:  { "image": <dataURL|base64>, "types": ["Photograph"|"Art/Anime"] }
+                       (types defaults to ["Photograph"]).
+        Response JSON: { "prompt": "<comma-joined interrogation(s)>" }
+        Heavy interrogator imports happen inside the handler; on failure a 500
+        JSON {"error": ...} is returned (the server never crashes)."""
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        if not isinstance(body, dict):
+            return JSONResponse(status_code=400, content={"error": "body must be a JSON object"})
+        try:
+            return describe_image(body)
+        except ValueError as e:
+            return JSONResponse(status_code=400, content={"error": str(e)})
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return JSONResponse(status_code=500, content={"error": str(e)})
+
+    @app.post("/api/read_metadata")
+    async def read_metadata(request: Request):
+        """Read generation metadata embedded in an image (DedrisGenAI/A1111).
+
+        Request body:  { "image": <dataURL|base64> }
+        Response JSON: { "found": bool, "params": {<mapped>}, "raw": {<parsed>} }
+          - params uses OUR generate-body field names (prompt, negative_prompt,
+            performance, aspect_ratio, seed, guidance_scale, sharpness, sampler,
+            scheduler, base_model, refiner_model, refiner_switch, clip_skip, vae,
+            steps_override, style_selections, loras).
+          - raw is the verbatim parser.to_json(...) dict.
+        Returns {"found": false, "params": {}, "raw": {}} when no metadata is
+        present. Never crashes."""
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        if not isinstance(body, dict):
+            return JSONResponse(status_code=400, content={"error": "body must be a JSON object"})
+        try:
+            return read_image_metadata(body)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return JSONResponse(status_code=500, content={"error": str(e)})
 
     @app.post("/api/ensure_model")
     async def ensure_model(request: Request):

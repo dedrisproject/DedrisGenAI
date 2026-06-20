@@ -167,16 +167,17 @@ foreach (Lang::SUPPORTED as $code) {
       </div>
 
       <!-- Image-input tabs — the prominent MAIN box.
-           Only the input modes that are actually wired to the engine are
-           rendered: Text to Image, Edit Image (inpaint) and Create variants.
-           The previously-stubbed tabs (Image Prompt, Describe, Enhance,
-           Metadata) were non-functional and have been removed; they remain in
-           git history if they are ever wired up. -->
+           Generation modes: Text to Image, Edit Image (inpaint), Create variants
+           (uov) and Image Prompt (ip). Utility tabs (no Generate of their own):
+           Describe (image → prompt) and Metadata (read params from an image). -->
       <div class="card input-tabs-card">
         <div class="tabs" id="input-tabs" role="tablist">
           <button class="tab active" data-tab="text"     role="tab" data-i18n="tab.text"><?= htmlspecialchars($t('tab.text', 'Text to Image'), ENT_QUOTES) ?></button>
           <button class="tab" data-tab="inpaint"  role="tab" data-i18n="tab.inpaint"><?= htmlspecialchars($t('tab.inpaint', 'Edit Image'), ENT_QUOTES) ?></button>
           <button class="tab" data-tab="uov"      role="tab" data-i18n="tab.uov"><?= htmlspecialchars($t('tab.uov', 'Create variants'), ENT_QUOTES) ?></button>
+          <button class="tab" data-tab="ip"       role="tab" data-i18n="tab.ip"><?= htmlspecialchars($t('tab.ip', 'Image Prompt'), ENT_QUOTES) ?></button>
+          <button class="tab" data-tab="describe" role="tab" data-i18n="tab.describe"><?= htmlspecialchars($t('tab.describe', 'Describe'), ENT_QUOTES) ?></button>
+          <button class="tab" data-tab="metadata" role="tab" data-i18n="tab.metadata"><?= htmlspecialchars($t('tab.metadata', 'Metadata'), ENT_QUOTES) ?></button>
         </div>
 
         <!-- Text to image (default) -->
@@ -259,7 +260,107 @@ foreach (Lang::SUPPORTED as $code) {
             </select>
           </label>
         </div>
+
+        <!-- Image Prompt (ip) — a real generation mode. One or more reference
+             images, each with a Type + Stop + Weight, are sent alongside the
+             main prompt as input_mode:"ip". The shared prompt-host is moved in
+             here (mount #prompt-mount-ip) so the prompt follows this tab too. -->
+        <div class="tabpanel" data-panel="ip">
+          <div class="tab-intro">
+            <h3 data-i18n="tab.ip"><?= htmlspecialchars($t('tab.ip', 'Image Prompt'), ENT_QUOTES) ?></h3>
+            <p class="note" data-i18n="ip.intro"><?= htmlspecialchars($t('ip.intro', 'Upload one or two reference images, choose how each one guides the result (Image Prompt, PyraCanny, CPDS or FaceSwap), set the prompt and press Generate.'), ENT_QUOTES) ?></p>
+          </div>
+
+          <!-- Advanced + Image Prompt mount point: the shared prompt-host is
+               moved in here so prompt + negative appear within this tab. -->
+          <div id="prompt-mount-ip" class="prompt-mount"></div>
+
+          <!-- image slots are injected by app.js (buildIpSlots), see #ip-slots -->
+          <div class="ip-slots" id="ip-slots"></div>
+        </div>
+
+        <!-- Describe — UTILITY tab (no Generate of its own). Reads an image and
+             returns a suggested prompt, which is dropped into the main prompt
+             box; the UI then switches to the Text-to-Image tab. -->
+        <div class="tabpanel" data-panel="describe">
+          <div class="tab-intro">
+            <h3 data-i18n="tab.describe"><?= htmlspecialchars($t('tab.describe', 'Describe'), ENT_QUOTES) ?></h3>
+            <p class="note" data-i18n="describe.intro"><?= htmlspecialchars($t('describe.intro', 'Upload an image and let DedrisGenAI write a prompt that describes it. The suggested prompt is placed in the prompt box, ready to generate.'), ENT_QUOTES) ?></p>
+          </div>
+
+          <!-- upload / drop zone (hidden once an image is loaded) -->
+          <div class="dropzone" id="describe-dropzone"><div class="icon">📝</div><div data-i18n="describe.upload"><?= htmlspecialchars($t('describe.upload', 'Drop or click to upload an image to describe'), ENT_QUOTES) ?></div></div>
+          <input type="file" accept="image/*" class="hidden" id="describe-file">
+
+          <!-- source image preview (shown once loaded) -->
+          <div class="uov-preview hidden" id="describe-preview">
+            <img id="describe-preview-img" alt="">
+          </div>
+
+          <div class="describe-methods" style="margin-top:12px">
+            <span class="field-label" style="margin-bottom:6px"><span data-i18n="describe.method"><?= htmlspecialchars($t('describe.method', 'Method'), ENT_QUOTES) ?></span></span>
+            <label class="check" style="margin-right:14px"><input type="checkbox" class="describe-method" value="Photograph" checked> <span data-i18n="describe.method.photo"><?= htmlspecialchars($t('describe.method.photo', 'Photograph'), ENT_QUOTES) ?></span></label>
+            <label class="check"><input type="checkbox" class="describe-method" value="Art/Anime"> <span data-i18n="describe.method.anime"><?= htmlspecialchars($t('describe.method.anime', 'Art / Anime'), ENT_QUOTES) ?></span></label>
+          </div>
+
+          <div class="describe-actions" style="margin-top:12px">
+            <button type="button" class="btn primary" id="describe-btn" data-i18n="describe.button"><?= htmlspecialchars($t('describe.button', 'Describe this image'), ENT_QUOTES) ?></button>
+          </div>
+          <div class="describe-msg note hidden" id="describe-msg" role="status" aria-live="polite"></div>
+        </div>
+
+        <!-- Metadata — UTILITY tab (no Generate of its own). Reads the generation
+             parameters embedded in an image previously created by DedrisGenAI and
+             applies them to the UI controls, then switches to Text-to-Image. -->
+        <div class="tabpanel" data-panel="metadata">
+          <div class="tab-intro">
+            <h3 data-i18n="tab.metadata"><?= htmlspecialchars($t('tab.metadata', 'Metadata'), ENT_QUOTES) ?></h3>
+            <p class="note" data-i18n="metadata.intro"><?= htmlspecialchars($t('metadata.intro', 'Upload an image that DedrisGenAI created to read back the prompt, model and settings used, and load them into the controls on this page.'), ENT_QUOTES) ?></p>
+          </div>
+
+          <!-- upload / drop zone (hidden once an image is loaded) -->
+          <div class="dropzone" id="metadata-dropzone"><div class="icon">🔎</div><div data-i18n="metadata.upload"><?= htmlspecialchars($t('metadata.upload', 'Drop or click to upload an image to read its parameters'), ENT_QUOTES) ?></div></div>
+          <input type="file" accept="image/*" class="hidden" id="metadata-file">
+
+          <!-- source image preview (shown once loaded) -->
+          <div class="uov-preview hidden" id="metadata-preview">
+            <img id="metadata-preview-img" alt="">
+          </div>
+
+          <div class="metadata-actions" style="margin-top:12px">
+            <button type="button" class="btn primary" id="metadata-btn" data-i18n="metadata.button"><?= htmlspecialchars($t('metadata.button', 'Load parameters'), ENT_QUOTES) ?></button>
+          </div>
+          <div class="metadata-msg note hidden" id="metadata-msg" role="status" aria-live="polite"></div>
+        </div>
       </div>
+
+      <!-- Image-Prompt slot template (cloned by app.js into #ip-slots) -->
+      <template id="ip-slot-tpl">
+        <div class="ip-slot">
+          <div class="dropzone ip-dropzone"><div class="icon">🖼️</div><div data-i18n="ip.upload"><?= htmlspecialchars($t('ip.upload', 'Drop or click to upload a reference image'), ENT_QUOTES) ?></div></div>
+          <input type="file" accept="image/*" class="hidden ip-file">
+          <div class="ip-preview hidden"><img class="ip-preview-img" alt=""></div>
+          <div class="ip-controls">
+            <label class="field" style="margin:0">
+              <span class="lbl" data-i18n="ip.type"><?= htmlspecialchars($t('ip.type', 'Type'), ENT_QUOTES) ?></span>
+              <select class="ip-type">
+                <option value="ImagePrompt">ImagePrompt</option>
+                <option value="PyraCanny">PyraCanny</option>
+                <option value="CPDS">CPDS</option>
+                <option value="FaceSwap">FaceSwap</option>
+              </select>
+            </label>
+            <label class="field" style="margin:0">
+              <span class="field-label"><span data-i18n="ip.stop"><?= htmlspecialchars($t('ip.stop', 'Stop at'), ENT_QUOTES) ?></span><span class="val ip-stop-out">0.50</span></span>
+              <input type="range" class="ip-stop" min="0" max="1" step="0.01" value="0.5">
+            </label>
+            <label class="field" style="margin:0">
+              <span class="field-label"><span data-i18n="ip.weight"><?= htmlspecialchars($t('ip.weight', 'Weight'), ENT_QUOTES) ?></span><span class="val ip-weight-out">0.60</span></span>
+              <input type="range" class="ip-weight" min="0" max="2" step="0.01" value="0.6">
+            </label>
+          </div>
+        </div>
+      </template>
 
       <!-- Generate / Skip / Stop — directly below the main (tabs) box. -->
       <div class="gen-buttons">

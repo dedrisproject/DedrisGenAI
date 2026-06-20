@@ -623,6 +623,40 @@ input[type="range"]::-moz-range-thumb {
 }
 .uov-preview img { max-width: 100%; max-height: 360px; display: block; border-radius: 6px; }
 
+/* ---------- Image Prompt (ip) reference-image slots ---------- */
+.ip-slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+}
+.ip-slot {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+  padding: 12px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.ip-slot .ip-dropzone { padding: 20px 12px; }
+.ip-slot .ip-preview.hidden { display: none !important; }
+.ip-slot .ip-preview {
+  display: grid; place-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background:
+    linear-gradient(var(--bg-2), var(--bg-2)),
+    repeating-conic-gradient(#0f1320 0% 25%, #11151f 0% 50%) 50% / 22px 22px;
+  overflow: hidden; padding: 6px;
+}
+.ip-slot .ip-preview img { max-width: 100%; max-height: 220px; display: block; border-radius: 6px; }
+.ip-slot .ip-controls { display: flex; flex-direction: column; gap: 10px; }
+
+/* ---------- Describe / Metadata utility messages ---------- */
+.describe-methods { display: block; }
+.describe-actions, .metadata-actions { display: flex; gap: 8px; }
+.describe-msg.hidden, .metadata-msg.hidden { display: none !important; }
+.describe-msg.ok, .metadata-msg.ok { color: var(--good); }
+.describe-msg.err, .metadata-msg.err { color: var(--bad); }
+
 /* ---------- Tab intro heading (shared by inpaint + uov panels) ---------- */
 .tab-intro { margin-bottom: 12px; }
 .tab-intro h3 { margin: 0 0 6px; font-size: 15px; font-weight: 700; color: var(--text); }
