@@ -650,12 +650,14 @@ def constants_max_seed():
 # Generate / progress / stop
 # ---------------------------------------------------------------------------
 
-def _missing_preset_downloads(body):
-    """Return [(file_name, url, model_dir), ...] of the requested preset's models
-    that are NOT present on disk yet. Only the active preset is fetched at startup,
-    so switching to Anime/Realistic needs an on-demand download of its checkpoint
-    (and any preset LoRAs/embeddings)."""
-    label = body.get("preset") or PRESET_FILE_TO_LABEL.get(_active_preset_file(), "Standard")
+# Per-preset model download state, so the UI can show a "downloading model" bar
+# the moment a preset is selected (not only when generating).
+_PRESET_DL = {}            # label -> {state, message, done, total, event}
+_PRESET_DL_LOCK = threading.Lock()
+
+
+def _preset_missing(label):
+    """[(file_name, url, model_dir), ...] of the preset's models not present on disk."""
     file_name = PRESET_LABEL_TO_FILE.get(label)
     missing = []
     if not file_name:
@@ -677,26 +679,78 @@ def _missing_preset_downloads(body):
     return missing
 
 
-def _download_then_queue(task, missing):
-    """Background worker: download missing preset models, then enqueue the task for
-    the generation worker. Reports progress via task._download_msg; on failure,
-    surfaces the error through the normal finish/error path."""
+def _public_dl_status(label, st):
+    return {"preset": label, "state": st.get("state", "idle"),
+            "message": st.get("message", ""), "done": st.get("done", 0),
+            "total": st.get("total", 0), "ready": st.get("state") == "ready"}
+
+
+def _ensure_preset(label):
+    """Idempotently make sure a preset's models are present. Returns a status dict.
+    The first call for a preset with missing models starts a background download;
+    repeated calls just report the current state (no duplicate downloads)."""
+    bootstrap()
+    if label not in PRESET_LABEL_TO_FILE:
+        return {"preset": label, "state": "error", "ready": False,
+                "message": f"unknown preset '{label}'", "done": 0, "total": 0}
+    with _PRESET_DL_LOCK:
+        st = _PRESET_DL.get(label)
+        if st and st.get("state") in ("downloading", "ready"):
+            return _public_dl_status(label, st)
+        try:
+            missing = _preset_missing(label)
+        except Exception:
+            missing = []
+        if not missing:
+            st = {"state": "ready", "message": "Model ready", "done": 0, "total": 0,
+                  "event": threading.Event()}
+            st["event"].set()
+            _PRESET_DL[label] = st
+            return _public_dl_status(label, st)
+        st = {"state": "downloading", "done": 0, "total": len(missing),
+              "message": f"Downloading model for {label} ({missing[0][0]}) …",
+              "event": threading.Event()}
+        _PRESET_DL[label] = st
+    threading.Thread(target=_run_preset_download, args=(label, missing, st), daemon=True).start()
+    return _public_dl_status(label, st)
+
+
+def _run_preset_download(label, missing, st):
     try:
         from modules.model_loader import load_file_from_url
         total = len(missing)
         for i, (fn, url, model_dir) in enumerate(missing, start=1):
-            task._download_msg = (f"Downloading model {i}/{total} for this preset "
-                                  f"({fn}) — first use, this can take a few minutes…")
+            st["done"] = i - 1
+            st["message"] = (f"Downloading {fn} ({i}/{total}) for {label} — "
+                             f"first use, this can take a few minutes…")
             load_file_from_url(url=url, model_dir=model_dir, file_name=fn)
-        task._download_msg = None
-        worker.async_tasks.append(task)
+        st["done"] = total
+        st["state"] = "ready"
+        st["message"] = "Model ready"
     except Exception:
         import traceback
         traceback.print_exc()
-        try:
-            task.last_exception = traceback.format_exc()
-        except Exception:
-            pass
+        last = traceback.format_exc().strip().splitlines()
+        st["state"] = "error"
+        st["message"] = "Model download failed: " + (last[-1] if last else "unknown error")
+    finally:
+        st["event"].set()
+
+
+def _wait_then_queue(task, label):
+    """Wait until the preset's models finish downloading, then enqueue the task."""
+    st = _PRESET_DL.get(label)
+    ev = st.get("event") if st else None
+    if ev:
+        while not ev.wait(timeout=1.0):
+            task._download_msg = (_PRESET_DL.get(label) or {}).get("message", task._download_msg)
+        task._download_msg = (_PRESET_DL.get(label) or {}).get("message")
+    final = _PRESET_DL.get(label) or {}
+    if final.get("state") == "ready":
+        task._download_msg = None
+        worker.async_tasks.append(task)
+    else:
+        task.last_exception = final.get("message", "model download failed")
         task._download_msg = None
         task.yields.append(['finish', task.results])
 
@@ -716,20 +770,20 @@ def start_generation(body):
     except Exception:
         pass
 
-    # The active preset's models are fetched at startup, but switching to another
-    # preset (Anime/Realistic) may need its checkpoint downloaded first. Do it in a
-    # background thread so /api/generate returns immediately and the single-threaded
-    # PHP UI never blocks; the task is enqueued once its models are present.
-    try:
-        missing = _missing_preset_downloads(body)
-    except Exception:
-        missing = []
-    if missing:
-        task._download_msg = (f"Downloading model for this preset ({missing[0][0]}) — "
-                              f"first use, this can take a few minutes…")
-        threading.Thread(target=_download_then_queue, args=(task, missing), daemon=True).start()
-    else:
+    # Ensure the requested preset's models are present (they're downloaded on first
+    # use of Anime/Realistic). _ensure_preset is idempotent and shares state with the
+    # /api/ensure_model endpoint the UI calls on preset selection, so there is no
+    # duplicate download. The task is enqueued once the models are ready.
+    label = body.get("preset") or PRESET_FILE_TO_LABEL.get(_active_preset_file(), "Standard")
+    st = _ensure_preset(label)
+    if st["state"] == "ready":
         worker.async_tasks.append(task)
+    elif st["state"] == "error":
+        task.last_exception = st.get("message", "model unavailable")
+        task.yields.append(['finish', task.results])
+    else:  # downloading
+        task._download_msg = st.get("message")
+        threading.Thread(target=_wait_then_queue, args=(task, label), daemon=True).start()
     return {"task_id": task_id, "seed": seed}
 
 
@@ -951,6 +1005,40 @@ def create_app():
         if not task_id:
             return JSONResponse(status_code=400, content={"error": "task_id required"})
         return stop_task(task_id)
+
+    @app.post("/api/ensure_model")
+    async def ensure_model(request: Request):
+        """Start (or report) the download of a preset's models. Called by the UI on
+        preset selection so a 'downloading model' bar can show before generating."""
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        label = (body or {}).get("preset") if isinstance(body, dict) else None
+        label = label or PRESET_FILE_TO_LABEL.get(_active_preset_file(), "Standard")
+        try:
+            return _ensure_preset(label)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return JSONResponse(status_code=500, content={"error": str(e)})
+
+    @app.get("/api/model_status")
+    def model_status(preset: str = None):
+        bootstrap()
+        label = preset or PRESET_FILE_TO_LABEL.get(_active_preset_file(), "Standard")
+        st = _PRESET_DL.get(label)
+        if st:
+            return _public_dl_status(label, st)
+        # Not requested yet: report ready if already present, else idle.
+        try:
+            missing = _preset_missing(label)
+        except Exception:
+            missing = []
+        return {"preset": label, "ready": not missing,
+                "state": "ready" if not missing else "idle",
+                "message": "Model ready" if not missing else "Model not downloaded yet",
+                "done": 0, "total": len(missing)}
 
     @app.get("/outputs/{path:path}")
     def outputs(path: str):
