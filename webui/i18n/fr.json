@@ -188,5 +188,17 @@
   "lightbox.alt": "Image complète",
   "lightbox.close": "Fermer",
   "foot.text": "DedrisGenAI · Studio d'images IA · ",
-  "foot.version": "v—"
+  "foot.version": "v—",
+  "nav.api": "API",
+  "api.title": "API",
+  "api.intro": "Chaque point de terminaison ci-dessous est accessible sur ce site à la même origine. Les appels passent par le proxy PHP de DedrisGenAI — votre navigateur ne communique jamais directement avec le moteur. Copiez un extrait curl prêt à l'emploi ou cliquez sur Exécuter pour l'essayer depuis votre navigateur.",
+  "api.baseurl": "URL de base",
+  "api.copy": "Copier",
+  "api.copied": "Copié",
+  "api.run": "Exécuter",
+  "api.running": "Exécution…",
+  "api.response": "Réponse",
+  "api.body": "Corps de la requête (JSON)",
+  "api.invalid_json": "JSON non valide dans le corps de la requête — corrigez-le et réessayez.",
+  "api.back": "← Retour à l'app"
 }

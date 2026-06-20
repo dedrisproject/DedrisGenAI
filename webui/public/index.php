@@ -100,6 +100,12 @@ foreach (Lang::SUPPORTED as $code) {
        title="<?= htmlspecialchars($t('nav.demo', 'Examples'), ENT_QUOTES) ?>"
        aria-label="<?= htmlspecialchars($t('nav.demo', 'Examples'), ENT_QUOTES) ?>"><span aria-hidden="true">🖼️</span><span class="nav-demo-txt hidden-sm" data-i18n="nav.demo"><?= htmlspecialchars($t('nav.demo', 'Examples'), ENT_QUOTES) ?></span></a>
 
+    <!-- API docs page link — opens the standalone interactive API reference. -->
+    <a class="icon-btn nav-demo" id="nav-api" href="apidocs.php"
+       data-i18n-title="nav.api" data-i18n-aria-label="nav.api"
+       title="<?= htmlspecialchars($t('nav.api', 'API'), ENT_QUOTES) ?>"
+       aria-label="<?= htmlspecialchars($t('nav.api', 'API'), ENT_QUOTES) ?>"><span aria-hidden="true">⟨⟩</span><span class="nav-demo-txt hidden-sm" data-i18n="nav.api"><?= htmlspecialchars($t('nav.api', 'API'), ENT_QUOTES) ?></span></a>
+
     <!-- Settings (gear) button — opens the Settings modal, sits next to the language selector. -->
     <button type="button" class="icon-btn" id="btn-settings"
             data-i18n-aria-label="settings.label" data-i18n-title="settings.label"

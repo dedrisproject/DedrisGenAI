@@ -80,6 +80,12 @@ foreach (Lang::SUPPORTED as $code) {
       </select>
     </div>
 
+    <!-- API docs page link — opens the standalone interactive API reference. -->
+    <a class="icon-btn nav-demo" id="nav-api" href="apidocs.php"
+       data-i18n-title="nav.api" data-i18n-aria-label="nav.api"
+       title="<?= htmlspecialchars($t('nav.api', 'API'), ENT_QUOTES) ?>"
+       aria-label="<?= htmlspecialchars($t('nav.api', 'API'), ENT_QUOTES) ?>"><span aria-hidden="true">⟨⟩</span><span class="nav-demo-txt hidden-sm" data-i18n="nav.api"><?= htmlspecialchars($t('nav.api', 'API'), ENT_QUOTES) ?></span></a>
+
     <!-- Back to the main app -->
     <a class="btn ghost sm" id="back-to-app" href="index.php"
        data-i18n="demo.back"><?= htmlspecialchars($t('demo.back', '← Back to app'), ENT_QUOTES) ?></a>

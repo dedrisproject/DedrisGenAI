@@ -188,5 +188,17 @@
   "lightbox.alt": "Vollbild",
   "lightbox.close": "Schließen",
   "foot.text": "DedrisGenAI · KI-Bildstudio · ",
-  "foot.version": "v—"
+  "foot.version": "v—",
+  "nav.api": "API",
+  "api.title": "API",
+  "api.intro": "Jeder Endpunkt unten ist auf dieser Website unter derselben Herkunft erreichbar. Die Aufrufe laufen über den DedrisGenAI-PHP-Proxy — der Browser spricht nie direkt mit der Engine. Kopiere einen fertigen curl-Befehl oder klicke auf Ausführen, um ihn direkt im Browser zu testen.",
+  "api.baseurl": "Basis-URL",
+  "api.copy": "Kopieren",
+  "api.copied": "Kopiert",
+  "api.run": "Ausführen",
+  "api.running": "Wird ausgeführt…",
+  "api.response": "Antwort",
+  "api.body": "Anfrage-Body (JSON)",
+  "api.invalid_json": "Ungültiges JSON im Anfrage-Body — bitte korrigieren und erneut versuchen.",
+  "api.back": "← Zurück zur App"
 }
