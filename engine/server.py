@@ -650,6 +650,57 @@ def constants_max_seed():
 # Generate / progress / stop
 # ---------------------------------------------------------------------------
 
+def _missing_preset_downloads(body):
+    """Return [(file_name, url, model_dir), ...] of the requested preset's models
+    that are NOT present on disk yet. Only the active preset is fetched at startup,
+    so switching to Anime/Realistic needs an on-demand download of its checkpoint
+    (and any preset LoRAs/embeddings)."""
+    label = body.get("preset") or PRESET_FILE_TO_LABEL.get(_active_preset_file(), "Standard")
+    file_name = PRESET_LABEL_TO_FILE.get(label)
+    missing = []
+    if not file_name:
+        return missing
+    content = config.try_get_preset_content(file_name)  # {} if missing/unreadable
+    from modules.util import get_file_from_folder_list
+    for fn, url in (content.get("checkpoint_downloads") or {}).items():
+        dest = get_file_from_folder_list(fn, config.paths_checkpoints)
+        if not os.path.isfile(dest):
+            missing.append((fn, url, os.path.dirname(dest)))
+    for fn, url in (content.get("lora_downloads") or {}).items():
+        dest = get_file_from_folder_list(fn, config.paths_loras)
+        if not os.path.isfile(dest):
+            missing.append((fn, url, os.path.dirname(dest)))
+    for fn, url in (content.get("embeddings_downloads") or {}).items():
+        dest = os.path.join(config.path_embeddings, fn)
+        if not os.path.isfile(dest):
+            missing.append((fn, url, config.path_embeddings))
+    return missing
+
+
+def _download_then_queue(task, missing):
+    """Background worker: download missing preset models, then enqueue the task for
+    the generation worker. Reports progress via task._download_msg; on failure,
+    surfaces the error through the normal finish/error path."""
+    try:
+        from modules.model_loader import load_file_from_url
+        total = len(missing)
+        for i, (fn, url, model_dir) in enumerate(missing, start=1):
+            task._download_msg = (f"Downloading model {i}/{total} for this preset "
+                                  f"({fn}) — first use, this can take a few minutes…")
+            load_file_from_url(url=url, model_dir=model_dir, file_name=fn)
+        task._download_msg = None
+        worker.async_tasks.append(task)
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        try:
+            task.last_exception = traceback.format_exc()
+        except Exception:
+            pass
+        task._download_msg = None
+        task.yields.append(['finish', task.results])
+
+
 def start_generation(body):
     bootstrap()
     args, seed = build_async_task_args(body)
@@ -657,15 +708,28 @@ def start_generation(body):
     task_id = uuid.uuid4().hex
     with _TASKS_LOCK:
         _TASKS[task_id] = task
-    # Reset the global interrupt flag the same way webui.generate_clicked does,
-    # then enqueue the task for the running worker thread.
+    # Reset the global interrupt flag the same way webui.generate_clicked does.
     try:
         import ldm_patched.modules.model_management as model_management
         with model_management.interrupt_processing_mutex:
             model_management.interrupt_processing = False
     except Exception:
         pass
-    worker.async_tasks.append(task)
+
+    # The active preset's models are fetched at startup, but switching to another
+    # preset (Anime/Realistic) may need its checkpoint downloaded first. Do it in a
+    # background thread so /api/generate returns immediately and the single-threaded
+    # PHP UI never blocks; the task is enqueued once its models are present.
+    try:
+        missing = _missing_preset_downloads(body)
+    except Exception:
+        missing = []
+    if missing:
+        task._download_msg = (f"Downloading model for this preset ({missing[0][0]}) — "
+                              f"first use, this can take a few minutes…")
+        threading.Thread(target=_download_then_queue, args=(task, missing), daemon=True).start()
+    else:
+        worker.async_tasks.append(task)
     return {"task_id": task_id, "seed": seed}
 
 
@@ -767,6 +831,13 @@ def get_progress(task_id):
                   "message": message, "images": images}
         _remember_done(task_id, result)
         return result
+
+    # The task is waiting on a one-time model download (preset switch) before it
+    # can be enqueued for the worker. Report it as a loading phase with a message.
+    dl_msg = getattr(task, "_download_msg", None)
+    if dl_msg:
+        return {"state": "loading", "progress": max(progress, 1), "preview": preview,
+                "message": dl_msg, "images": []}
 
     if task.last_stop == "stop":
         state = "stopped"
