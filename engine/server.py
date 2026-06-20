@@ -600,7 +600,9 @@ def build_async_task_args(body):
       15..(12+3*N)  lora rows: [enabled,name,weight] x default_max_lora_number
                                            body / preset (padded with True/None/1.0)
           input_image_checkbox             True iff inpaint/uov/ip input present
-          current_tab                      'ip'|'inpaint'|'uov' per input_mode
+          current_tab                      'ip'|'inpaint'|'uov'|'enhance' per input_mode
+                                           ('enhance' triggers the enhance pass on
+                                            its own; see the enhance block below)
           uov_method                       config.default_uov_method (Disabled)
           uov_input_image                  None
           outpaint_selections              [] (empty)
@@ -659,13 +661,20 @@ def build_async_task_args(body):
           debugging_dino                   False
           dino_erode_or_dilate             0
           debugging_enhance_masks_checkbox False
-          enhance_input_image              None
-          enhance_checkbox                 config.default_enhance_checkbox (False)
+          enhance_input_image              body['enhance_image'] when input_mode=='enhance', else None
+          enhance_checkbox                 True when enhance image decoded, else config.default_enhance_checkbox (False)
           enhance_uov_method               config.default_enhance_uov_method (Disabled)
           enhance_uov_processing_order     config.default_enhance_uov_processing_order
           enhance_uov_prompt_type          config.default_enhance_uov_prompt_type
-          enhance_ctrls: per enhance tab (default_enhance_tabs): 16 fields each,
-                   all disabled defaults mirroring webui.py
+          enhance_ctrls: per enhance tab (default_enhance_tabs): 16 fields each.
+                   input_mode=='enhance' enables the FIRST tab only:
+                     enhance_enabled              True
+                     enhance_mask_dino_prompt_text body['enhance_detection'] (region to find, e.g. "face")
+                     enhance_prompt              body['enhance_prompt'] or body['prompt']
+                     enhance_negative_prompt     body['negative_prompt']
+                     enhance_mask_model          'sam' (GroundingDINO+SAM text detection)
+                   all other per-tab fields + tabs 2..N stay disabled defaults
+                   (mirroring webui.py); the 16-field-per-tab count is unchanged.
       ===================================================================
     """
     import args_manager
@@ -762,6 +771,19 @@ def build_async_task_args(body):
     uov_img = None
     uov_method = config.default_uov_method
     ip_entries = []   # decoded Image-Prompt slots: [{"image": np, "type", "stop", "weight"}]
+    # "enhance" input mode: a single source image is enhanced (skips generation),
+    # with a GroundingDINO+SAM text-detected region inpainted. Driven entirely by
+    # the enhance block far below (enhance_input_image + enhance_checkbox + the
+    # first enhance tab) plus current_tab=='enhance' — the worker's trigger (see
+    # async_worker.py: "if async_task.current_tab == 'enhance' and
+    # async_task.enhance_input_image is not None: goals.append('enhance')"). Body fields:
+    #   input_mode:        "enhance"
+    #   enhance_image:     base64 data URL of the image to enhance (required)
+    #   enhance_detection: region for GroundingDINO+SAM to find, e.g. "face"
+    #   enhance_prompt:    optional; falls back to the main prompt when absent
+    enhance_img = None
+    if mode == "enhance":
+        enhance_img = _data_url_to_np(body.get("enhance_image"), "RGB")
 
     if mode == "inpaint":
         inpaint_img = _data_url_to_np(body.get("inpaint_image"), "RGB")
@@ -817,9 +839,16 @@ def build_async_task_args(body):
             except Exception:
                 inpaint_msk = np.zeros_like(inpaint_img)
 
+    do_enhance = enhance_img is not None
     args.append(bool(do_inpaint or do_uov or do_ip))    # input_image_checkbox
-    # current_tab key the worker keys preprocessing off of ('ip'|'inpaint'|'uov').
-    if do_ip:
+    # current_tab key the worker keys preprocessing off of ('ip'|'inpaint'|'uov'|'enhance').
+    # Enhance is independent of input_image_checkbox: the worker triggers the
+    # enhance goal solely on current_tab=='enhance' + enhance_input_image being
+    # set (see async_worker.py line ~929), so we set the tab here while leaving
+    # input_image_checkbox False (no inpaint/uov/ip input present).
+    if do_enhance:
+        current_tab = "enhance"
+    elif do_ip:
         current_tab = "ip"
     elif do_inpaint:
         current_tab = "inpaint"
@@ -915,20 +944,29 @@ def build_async_task_args(body):
     args.append(0)                  # dino_erode_or_dilate
     args.append(False)              # debugging_enhance_masks_checkbox
 
-    # enhance block (single-image inputs)
-    args.append(None)               # enhance_input_image
-    args.append(bool(config.default_enhance_checkbox))            # enhance_checkbox
+    # enhance block (single-image inputs). For input_mode=="enhance" the decoded
+    # source image fills enhance_input_image and the pass is enabled via
+    # enhance_checkbox; the first enhance tab below carries the detection/prompt.
+    args.append(enhance_img if do_enhance else None)             # enhance_input_image
+    args.append(True if do_enhance else bool(config.default_enhance_checkbox))  # enhance_checkbox
     args.append(config.default_enhance_uov_method)               # enhance_uov_method
     args.append(config.default_enhance_uov_processing_order)     # enhance_uov_processing_order
     args.append(config.default_enhance_uov_prompt_type)          # enhance_uov_prompt_type
 
-    # enhance_ctrls: 16 fields per enhance tab, all disabled defaults (mirror webui.py)
-    for _ in range(config.default_enhance_tabs):
-        args.append(False)                                       # enhance_enabled
-        args.append("")                                         # enhance_mask_dino_prompt_text
-        args.append("")                                         # enhance_prompt
-        args.append("")                                         # enhance_negative_prompt
-        args.append(config.default_enhance_inpaint_mask_model)  # enhance_mask_model
+    # enhance_ctrls: 16 fields per enhance tab, all disabled defaults (mirror webui.py).
+    # In enhance mode the FIRST tab is enabled with a GroundingDINO+SAM text-detected
+    # mask (enhance_mask_model="sam"); tabs 2..N stay fully disabled defaults. Only
+    # VALUES change here — the field count per tab (16) is unchanged.
+    for _tab_index in range(config.default_enhance_tabs):
+        _first_enhance_tab = do_enhance and _tab_index == 0
+        args.append(True if _first_enhance_tab else False)       # enhance_enabled
+        # enhance_mask_dino_prompt_text: the region GroundingDINO+SAM should find.
+        args.append(str(body.get("enhance_detection", "")) if _first_enhance_tab else "")  # enhance_mask_dino_prompt_text
+        # enhance_prompt: optional per-tab prompt; falls back to the main prompt.
+        args.append(str(body.get("enhance_prompt") or body.get("prompt") or "") if _first_enhance_tab else "")  # enhance_prompt
+        args.append(str(body.get("negative_prompt", "")) if _first_enhance_tab else "")  # enhance_negative_prompt
+        # enhance_mask_model: "sam" => GroundingDINO text detection + SAM segmentation.
+        args.append("sam" if _first_enhance_tab else config.default_enhance_inpaint_mask_model)  # enhance_mask_model
         args.append(config.default_inpaint_mask_cloth_category) # enhance_mask_cloth_category
         args.append(config.default_inpaint_mask_sam_model)      # enhance_mask_sam_model
         args.append(0.25)                                      # enhance_mask_text_threshold

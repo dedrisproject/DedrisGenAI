@@ -644,8 +644,8 @@
 
   // The Styles picker belongs to Text-to-Image only. It is visible only when the
   // active input tab is Text-to-Image and hidden for every other tab (Edit Image,
-  // Create variants, Image Prompt, Describe and Metadata). Re-evaluated on every
-  // tab change.
+  // Create variants, Image Prompt, Enhance, Describe and Metadata). Re-evaluated
+  // on every tab change.
   function updateStylesVisibility() {
     const card = $('#styles-card');
     if (!card) return;
@@ -672,6 +672,9 @@
     } else if (state.activeTab === 'ip') {
       // Image Prompt: inside the ip panel, above the reference-image slots.
       mount = $('#prompt-mount-ip');
+    } else if (state.activeTab === 'enhance') {
+      // Enhance: inside the enhance panel; the main prompt is the "how to improve".
+      mount = $('#prompt-mount-enhance');
     } else {
       // Text to Image — and the utility tabs (describe / metadata), which act and
       // then switch back to Text. Mounting the single prompt-host in the text
@@ -1450,6 +1453,24 @@
       ipExtra = ipPayload();
     }
 
+    // Enhance tab: a source image AND a detection text are required. Block with a
+    // localized hint if either is missing, otherwise send input_mode:"enhance" +
+    // enhance_image / enhance_detection / enhance_prompt alongside the main prompt.
+    let enhanceExtra = null;
+    if (state.activeTab === 'enhance') {
+      if (!enhanceHasImage()) {
+        showBannerKey('warn', 'enhance.need_image', null, false);
+        setTimeout(hideBanner, 4000);
+        return;
+      }
+      if (!enhanceDetectionText()) {
+        showBannerKey('warn', 'enhance.need_detection', null, false);
+        setTimeout(hideBanner, 4000);
+        return;
+      }
+      enhanceExtra = enhancePayload();
+    }
+
     setGenerating(true);
     startTimers();
     setIndeterminate(true);                 // start animated immediately
@@ -1461,6 +1482,7 @@
       if (inpaintExtra) Object.assign(params, inpaintExtra);
       if (uovExtra) Object.assign(params, uovExtra);
       if (ipExtra) Object.assign(params, ipExtra);
+      if (enhanceExtra) Object.assign(params, enhanceExtra);
       // Remember the prompt + negative used, so each resulting image can carry
       // them in the feed (and the lightbox can show + copy them).
       state.runPrompt = params.prompt || '';
@@ -2253,6 +2275,93 @@
     return { input_mode: 'ip', ip_images: images };
   }
 
+  // ---------------------------------------------------------------- enhance
+  // A real generation mode. Upload a source image, type the region to find via
+  // text detection (e.g. "face"), and describe how to improve it (the MAIN
+  // positive prompt). On Generate (with the enhance tab active and an image +
+  // detection text present) we send
+  //   input_mode:"enhance", enhance_image, enhance_detection, enhance_prompt
+  // using a native-resolution data URL and the MAIN positive/negative prompt;
+  // the engine finds that region (SAM/detection) and regenerates only that area.
+  const enhance = {
+    img: null,            // HTMLImageElement (the loaded source)
+    natW: 0, natH: 0,     // native pixel dimensions
+  };
+
+  function bindEnhance() {
+    const dz = $('#enhance-dropzone');
+    const file = $('#enhance-file');
+    if (dz && file) {
+      dz.addEventListener('click', () => file.click());
+      dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('drag'); });
+      dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+      dz.addEventListener('drop', (e) => {
+        e.preventDefault(); dz.classList.remove('drag');
+        const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f) loadEnhanceFile(f);
+      });
+      file.addEventListener('change', () => { if (file.files[0]) loadEnhanceFile(file.files[0]); });
+    }
+  }
+
+  function loadEnhanceFile(file) {
+    if (!file || !/^image\//.test(file.type)) return;
+    const reader = new FileReader();
+    reader.onload = () => loadEnhanceImage(reader.result);
+    reader.readAsDataURL(file);
+  }
+
+  // Load a source image into the Enhance editor from a File's data URL, a
+  // same-origin output URL, or an already-decoded HTMLImageElement.
+  function loadEnhanceImage(imgOrUrl) {
+    if (!imgOrUrl) return;
+    if (imgOrUrl instanceof HTMLImageElement && imgOrUrl.complete && (imgOrUrl.naturalWidth || imgOrUrl.width)) {
+      setupEnhanceImage(imgOrUrl);
+      return;
+    }
+    const img = new Image();
+    img.crossOrigin = 'anonymous';            // same-origin outputs, but keeps the canvas exportable
+    img.onload = () => setupEnhanceImage(img);
+    img.src = (imgOrUrl instanceof HTMLImageElement) ? imgOrUrl.src : outputUrl(imgOrUrl);
+  }
+
+  function setupEnhanceImage(img) {
+    enhance.img = img;
+    enhance.natW = img.naturalWidth || img.width;
+    enhance.natH = img.naturalHeight || img.height;
+    if (!enhance.natW || !enhance.natH) { enhance.img = null; return; }
+
+    const preview = $('#enhance-preview');
+    const previewImg = $('#enhance-preview-img');
+    const dz = $('#enhance-dropzone');
+    if (previewImg) { previewImg.src = img.src; previewImg.alt = ''; }
+    if (preview) preview.classList.remove('hidden');
+    if (dz) dz.classList.add('hidden');
+  }
+
+  function enhanceHasImage() { return !!enhance.img; }
+  function enhanceDetectionText() {
+    const f = $('#enhance-detection');
+    return (f && f.value || '').trim();
+  }
+
+  // Build the generate payload pieces for Enhance at native resolution. Uses the
+  // MAIN positive/negative prompt; enhance_prompt is sent explicitly too so the
+  // engine has the "how to improve" prompt without inferring it.
+  function enhancePayload() {
+    if (!enhance.img) return null;
+    // re-encode the source image at native resolution so the engine gets clean bytes
+    const src = document.createElement('canvas');
+    src.width = enhance.natW; src.height = enhance.natH;
+    src.getContext('2d').drawImage(enhance.img, 0, 0, enhance.natW, enhance.natH);
+    return {
+      input_mode: 'enhance',
+      enhance_image: src.toDataURL('image/png'),
+      enhance_detection: enhanceDetectionText(),
+      enhance_prompt: ($('#prompt') ? $('#prompt').value : ''),
+    };
+  }
+
   // ---------------------------------------------------------------- describe (utility)
   // Reads an uploaded image and asks the engine for a suggested prompt
   // (POST api/describe {image, types}). On success the returned prompt is placed
@@ -2561,6 +2670,7 @@
     bindInpaint();
     bindUov();
     buildIpSlots();
+    bindEnhance();
     bindDescribe();
     bindMetadata();
     // Place the single prompt-host into the correct mount for the booted mode/tab.

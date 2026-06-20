@@ -148,8 +148,8 @@ foreach (Lang::SUPPORTED as $code) {
       <!-- Shared prompt host. There is exactly ONE positive prompt (#prompt) and
            ONE negative prompt (#negative_prompt) in the whole page. This single
            element is MOVED at runtime (placePrompt() in app.js) into whichever
-           mount point matches the active tab (text/inpaint/uov), so its typed
-           value and focus are preserved across tab switches (same DOM node). -->
+           mount point matches the active tab (text/inpaint/uov/ip/enhance), so its
+           typed value and focus are preserved across tab switches (same DOM node). -->
       <div id="prompt-host">
         <div class="card">
           <div class="card-body">
@@ -168,14 +168,16 @@ foreach (Lang::SUPPORTED as $code) {
 
       <!-- Image-input tabs — the prominent MAIN box.
            Generation modes: Text to Image, Edit Image (inpaint), Create variants
-           (uov) and Image Prompt (ip). Utility tabs (no Generate of their own):
-           Describe (image → prompt) and Metadata (read params from an image). -->
+           (uov), Image Prompt (ip) and Enhance (text-detected region redo).
+           Utility tabs (no Generate of their own): Describe (image → prompt) and
+           Metadata (read params from an image). -->
       <div class="card input-tabs-card">
         <div class="tabs" id="input-tabs" role="tablist">
           <button class="tab active" data-tab="text"     role="tab" data-i18n="tab.text"><?= htmlspecialchars($t('tab.text', 'Text to Image'), ENT_QUOTES) ?></button>
           <button class="tab" data-tab="inpaint"  role="tab" data-i18n="tab.inpaint"><?= htmlspecialchars($t('tab.inpaint', 'Edit Image'), ENT_QUOTES) ?></button>
           <button class="tab" data-tab="uov"      role="tab" data-i18n="tab.uov"><?= htmlspecialchars($t('tab.uov', 'Create variants'), ENT_QUOTES) ?></button>
           <button class="tab" data-tab="ip"       role="tab" data-i18n="tab.ip"><?= htmlspecialchars($t('tab.ip', 'Image Prompt'), ENT_QUOTES) ?></button>
+          <button class="tab" data-tab="enhance"  role="tab" data-i18n="tab.enhance"><?= htmlspecialchars($t('tab.enhance', 'Enhance'), ENT_QUOTES) ?></button>
           <button class="tab" data-tab="describe" role="tab" data-i18n="tab.describe"><?= htmlspecialchars($t('tab.describe', 'Describe'), ENT_QUOTES) ?></button>
           <button class="tab" data-tab="metadata" role="tab" data-i18n="tab.metadata"><?= htmlspecialchars($t('tab.metadata', 'Metadata'), ENT_QUOTES) ?></button>
         </div>
@@ -277,6 +279,39 @@ foreach (Lang::SUPPORTED as $code) {
 
           <!-- image slots are injected by app.js (buildIpSlots), see #ip-slots -->
           <div class="ip-slots" id="ip-slots"></div>
+        </div>
+
+        <!-- Enhance — a real generation mode. Upload a source image, type the
+             region to find via text detection (e.g. "face"), describe how to
+             improve it (the MAIN positive prompt), and Generate. The engine finds
+             that region (SAM/detection models) and regenerates only that area.
+             The shared prompt-host is moved in here (mount #prompt-mount-enhance)
+             so the main prompt follows this tab too and is the "how to improve". -->
+        <div class="tabpanel" data-panel="enhance">
+          <div class="tab-intro">
+            <h3 data-i18n="tab.enhance"><?= htmlspecialchars($t('tab.enhance', 'Enhance'), ENT_QUOTES) ?></h3>
+            <p class="note" data-i18n="enhance.intro"><?= htmlspecialchars($t('enhance.intro', 'Upload an image, type what part to detect (e.g. face), describe how to improve it, then Generate. It finds that region and regenerates it.'), ENT_QUOTES) ?></p>
+            <p class="note" data-i18n="enhance.note"><?= htmlspecialchars($t('enhance.note', 'This needs the SAM / detection models, which download on first use and may be limited on some cloud GPUs.'), ENT_QUOTES) ?></p>
+          </div>
+
+          <!-- Advanced + Enhance mount point: the shared prompt-host is moved in
+               here so prompt + negative appear within this tab. The main prompt is
+               the "how to improve" prompt. -->
+          <div id="prompt-mount-enhance" class="prompt-mount"></div>
+
+          <!-- upload / drop zone for the source image (hidden once an image is loaded) -->
+          <div class="dropzone" id="enhance-dropzone"><div class="icon">✨</div><div data-i18n="enhance.upload"><?= htmlspecialchars($t('enhance.upload', 'Drop or click to upload the image to enhance'), ENT_QUOTES) ?></div></div>
+          <input type="file" accept="image/*" class="hidden" id="enhance-file">
+
+          <!-- source image preview (shown once loaded), capped like the uov tab -->
+          <div class="uov-preview hidden" id="enhance-preview">
+            <img id="enhance-preview-img" alt="">
+          </div>
+
+          <!-- detection text: the region to find via text detection (face / eyes / hands…) -->
+          <label class="field" style="margin-top:12px"><span class="lbl" data-i18n="enhance.detection"><?= htmlspecialchars($t('enhance.detection', 'Region to detect'), ENT_QUOTES) ?></span>
+            <input type="text" id="enhance-detection" data-i18n-placeholder="enhance.detection.ph" placeholder="<?= htmlspecialchars($t('enhance.detection.ph', 'e.g. face, eyes, hands'), ENT_QUOTES) ?>">
+          </label>
         </div>
 
         <!-- Describe — UTILITY tab (no Generate of its own). Reads an image and
