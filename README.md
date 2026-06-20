@@ -7,6 +7,18 @@
   <p>Type a prompt, pick a preset, generate. No accounts, no cloud, no fuss.</p>
 </div>
 
+<div align="center">
+
+## ⚡ Try it on Google Colab — in 1 click
+
+**Free GPU · nothing to install.** Open the notebook, then **Runtime ▸ Run all**, and click the link it prints.
+
+<a href="https://colab.research.google.com/github/dedrisproject/DedrisGenAI/blob/master/engine/dedrisgenai_colab.ipynb">
+  <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="40">
+</a>
+
+</div>
+
 ---
 
 DedrisGenAI is a desktop image generator that runs entirely on your own machine. It pairs a
