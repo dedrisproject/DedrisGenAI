@@ -10,6 +10,8 @@
   "mode.advanced.tip": "Alle Modell-, erweiterten und Bildeingabe-Steuerungen anzeigen",
   "lang.label": "Sprache",
   "lang.tip": "Sprache der Oberfläche wählen",
+  "settings.label": "Einstellungen",
+  "settings.title": "Einstellungen",
   "preset.label": "Voreinstellung",
   "preset.aria": "Modell-Voreinstellung",
   "engine.connecting": "Verbindung…",

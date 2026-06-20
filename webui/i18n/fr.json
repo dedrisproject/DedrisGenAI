@@ -10,6 +10,8 @@
   "mode.advanced.tip": "Afficher toutes les commandes de modèles, avancées et d'image d'entrée",
   "lang.label": "Langue",
   "lang.tip": "Choisir la langue de l'interface",
+  "settings.label": "Paramètres",
+  "settings.title": "Paramètres",
   "preset.label": "Préréglage",
   "preset.aria": "Préréglage du modèle",
   "engine.connecting": "connexion…",

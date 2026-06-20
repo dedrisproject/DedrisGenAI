@@ -102,6 +102,19 @@ a { color: var(--accent-2); }
 .lang-group select:focus { box-shadow: none; outline: none; }
 .lang-group select option { background: var(--panel); color: var(--text); }
 
+/* ---------- Icon button (e.g. Settings gear) ---------- */
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; flex: none;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 999px; color: var(--text);
+  font-size: 16px; line-height: 1; cursor: pointer;
+  transition: border-color .15s, background .15s, filter .15s;
+}
+.icon-btn:hover { border-color: var(--accent-2); filter: brightness(1.1); }
+.icon-btn:active { transform: translateY(1px); }
+.icon-btn:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(124, 92, 255, .18); }
+
 /* Wrap the top bar gracefully on small screens. */
 @media (max-width: 860px) {
   .topbar { flex-wrap: wrap; row-gap: 8px; }
@@ -647,6 +660,39 @@ input[type="range"]::-moz-range-thumb {
 .lightbox.show { display: flex; }
 .lightbox img { max-width: 95vw; max-height: 92vh; border-radius: 8px; box-shadow: var(--shadow); }
 .lightbox .close { position: absolute; top: 18px; right: 24px; font-size: 30px; color: #fff; cursor: pointer; }
+
+/* ---------- Settings modal (reuses the lightbox overlay pattern) ---------- */
+.modal {
+  position: fixed; inset: 0; z-index: 110;
+  background: rgba(4, 6, 10, .8);
+  display: none; align-items: center; justify-content: center;
+  padding: 24px;
+}
+.modal.show { display: flex; }
+.modal-dialog {
+  width: 100%; max-width: 460px; max-height: 88vh; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.modal-dialog:focus { outline: none; }
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px 18px; border-bottom: 1px solid var(--border);
+}
+.modal-title {
+  margin: 0; font-size: 15px; font-weight: 700;
+  letter-spacing: .03em; color: var(--text);
+}
+.modal-close {
+  appearance: none; border: none; background: transparent;
+  color: var(--text-dim); font-size: 20px; line-height: 1; cursor: pointer;
+  padding: 2px 6px; border-radius: var(--radius-sm);
+  transition: color .15s, background .15s;
+}
+.modal-close:hover { color: var(--text); background: var(--panel-2); }
+.modal-close:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(124, 92, 255, .18); }
+.modal-body { padding: 18px; }
+.modal-body .field:last-child { margin-bottom: 0; }
 
 /* utility */
 .muted { color: var(--text-mute); }

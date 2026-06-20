@@ -104,6 +104,13 @@ foreach (Lang::SUPPORTED as $code) {
       </select>
     </div>
 
+    <!-- Settings (gear) button — opens the Settings modal, sits next to the language selector. -->
+    <button type="button" class="icon-btn" id="btn-settings"
+            data-i18n-aria-label="settings.label" data-i18n-title="settings.label"
+            aria-haspopup="dialog" aria-controls="settings-modal"
+            title="<?= htmlspecialchars($t('settings.label', 'Settings'), ENT_QUOTES) ?>"
+            aria-label="<?= htmlspecialchars($t('settings.label', 'Settings'), ENT_QUOTES) ?>"><span aria-hidden="true">⚙️</span></button>
+
     <div class="engine-pill starting" id="engine-status" data-i18n-title="engine.title" title="<?= htmlspecialchars($t('engine.title', 'Engine status'), ENT_QUOTES) ?>">
       <span class="dot"></span><span class="txt" data-i18n="engine.connecting"><?= htmlspecialchars($t('engine.connecting', 'connecting…'), ENT_QUOTES) ?></span>
     </div>
@@ -244,12 +251,6 @@ foreach (Lang::SUPPORTED as $code) {
       <!-- Setting basics -->
       <div class="card">
         <div class="card-body">
-          <div class="adv-only">
-            <label class="field"><span class="lbl" data-i18n="field.output_format"><?= htmlspecialchars($t('field.output_format', 'Output format'), ENT_QUOTES) ?></span>
-              <select id="output_format"></select>
-            </label>
-          </div>
-
           <div style="margin-top:4px">
             <span class="field-label"><span data-i18n="field.aspect_ratio"><?= htmlspecialchars($t('field.aspect_ratio', 'Aspect ratio'), ENT_QUOTES) ?></span></span>
             <select id="aspect_ratio" data-i18n-aria-label="field.aspect_ratio" aria-label="<?= htmlspecialchars($t('field.aspect_ratio', 'Aspect ratio'), ENT_QUOTES) ?>"></select>
@@ -388,6 +389,24 @@ foreach (Lang::SUPPORTED as $code) {
 
   <!-- lightbox -->
   <div class="lightbox" id="lightbox"><span class="close" id="lightbox-close" data-i18n-title="lightbox.close" title="<?= htmlspecialchars($t('lightbox.close', 'Close'), ENT_QUOTES) ?>">×</span><img id="lightbox-img" data-i18n-alt="lightbox.alt" alt="<?= htmlspecialchars($t('lightbox.alt', 'Full image'), ENT_QUOTES) ?>"></div>
+
+  <!-- Settings modal — separate element/handlers from the image lightbox above.
+       Opened by the gear button (#btn-settings); holds general settings (currently
+       Output format, moved here from the basics card; the same #output_format id is
+       still populated from /api/options by app.js). -->
+  <div class="modal" id="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" aria-hidden="true">
+    <div class="modal-dialog" id="settings-dialog" tabindex="-1">
+      <div class="modal-head">
+        <h2 class="modal-title" id="settings-title" data-i18n="settings.title"><?= htmlspecialchars($t('settings.title', 'Settings'), ENT_QUOTES) ?></h2>
+        <button type="button" class="modal-close" id="settings-close" data-i18n-aria-label="lightbox.close" data-i18n-title="lightbox.close" title="<?= htmlspecialchars($t('lightbox.close', 'Close'), ENT_QUOTES) ?>" aria-label="<?= htmlspecialchars($t('lightbox.close', 'Close'), ENT_QUOTES) ?>">✕</button>
+      </div>
+      <div class="modal-body">
+        <label class="field"><span class="lbl" data-i18n="field.output_format"><?= htmlspecialchars($t('field.output_format', 'Output format'), ENT_QUOTES) ?></span>
+          <select id="output_format"></select>
+        </label>
+      </div>
+    </div>
+  </div>
 
   <footer class="foot">
     <span data-i18n="foot.text"><?= htmlspecialchars($t('foot.text', 'DedrisGenAI · AI Image Studio · '), ENT_QUOTES) ?></span><span id="foot-version">v—</span>

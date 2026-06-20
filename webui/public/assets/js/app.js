@@ -1105,6 +1105,40 @@
   lb.addEventListener('click', (e) => { if (e.target === lb) closeLightbox(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeLightbox(); });
 
+  // ---------------------------------------------------------------- settings modal
+  // A general "Settings" dialog opened by the gear button next to the language
+  // selector. It is a SEPARATE element + handlers from the image lightbox above.
+  // Currently it hosts the Output format control (#output_format), which is still
+  // populated from /api/options by applyOptions() exactly as before.
+  const settingsModal = $('#settings-modal');
+  function isSettingsOpen() { return !!settingsModal && settingsModal.classList.contains('show'); }
+  function openSettings() {
+    if (!settingsModal) return;
+    settingsModal.classList.add('show');
+    settingsModal.setAttribute('aria-hidden', 'false');
+    const dialog = $('#settings-dialog');
+    if (dialog && typeof dialog.focus === 'function') {
+      try { dialog.focus({ preventScroll: true }); } catch (_) { dialog.focus(); }
+    }
+  }
+  function closeSettings() {
+    if (!settingsModal) return;
+    settingsModal.classList.remove('show');
+    settingsModal.setAttribute('aria-hidden', 'true');
+    const gear = $('#btn-settings');
+    if (gear && typeof gear.focus === 'function') { try { gear.focus(); } catch (_) {} }
+  }
+  if (settingsModal) {
+    const gear = $('#btn-settings');
+    if (gear) gear.addEventListener('click', openSettings);
+    const closeBtn = $('#settings-close');
+    if (closeBtn) closeBtn.addEventListener('click', closeSettings);
+    // click on the backdrop (outside the dialog) closes it
+    settingsModal.addEventListener('click', (e) => { if (e.target === settingsModal) closeSettings(); });
+    // Escape closes the settings modal (separate from the lightbox handler)
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && isSettingsOpen()) closeSettings(); });
+  }
+
   // ---------------------------------------------------------------- tabs
   // Only two input modes are wired and rendered: Text to Image and Inpaint.
   function bindTabs() {
