@@ -735,6 +735,21 @@ def get_progress(task_id):
     if finished:
         if task.last_stop == "stop":
             state = "stopped"
+            message = message or "Stopped"
+        elif not images:
+            # The worker finished but produced no image — almost always a swallowed
+            # exception inside the generation handler. Surface it instead of a
+            # silent "done" so the UI shows what actually went wrong.
+            state = "error"
+            err = getattr(task, "last_exception", None)
+            if err:
+                tb_lines = [ln for ln in str(err).strip().splitlines() if ln.strip()]
+                detail = " | ".join(tb_lines[-3:]) if tb_lines else str(err)
+                message = f"Generation failed: {detail}"
+            else:
+                message = ("Generation finished without producing an image. "
+                           "Check the engine log for the traceback "
+                           "(on Colab: /content/dedris_engine.log).")
         else:
             state = "done"
             message = message or "Finished"

@@ -1475,6 +1475,12 @@ def worker():
                 pipeline.prepare_text_encoder(async_call=True)
             except:
                 traceback.print_exc()
+                # Capture the error so the HTTP API / UI can surface it instead of
+                # silently finishing with no image.
+                try:
+                    task.last_exception = traceback.format_exc()
+                except Exception:
+                    pass
                 task.yields.append(['finish', task.results])
             finally:
                 if pid in modules.patch.patch_settings:
