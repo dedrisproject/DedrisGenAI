@@ -1,9 +1,9 @@
 @echo off
 rem launchers\common.bat - shared environment/setup for the Windows launcher.
-rem Called (CALLed) by start.bat and the provision_*.bat helpers to define paths,
+rem Called (CALLed) by run.bat and the provision_*.bat helpers to define paths,
 rem ports, and pinned runtime versions. Everything stays inside runtimes\.
 rem
-rem Usage: from start.bat:   call "%~dp0launchers\common.bat"
+rem Usage: from run.bat:   call "%~dp0launchers\common.bat"
 rem Caller must set REPO_ROOT before calling, OR this script derives it from its own
 rem location (launchers\ -> parent is the repo root).
 

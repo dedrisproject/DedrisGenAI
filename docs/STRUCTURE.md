@@ -25,7 +25,7 @@ DedrisGenAI/
 │  └─ python/              # portable Python + torch (auto-provisioned on first run; gitignored)
 ├─ launchers/              # bootstrap scripts (shared logic)
 ├─ docs/                   # documentation (you are here)
-├─ start.bat               # ROOT entry — Windows / NVIDIA CUDA
+├─ run.bat                 # ROOT entry — Windows / NVIDIA CUDA
 ├─ start.command           # ROOT entry — macOS / MPS
 └─ README.md               # top-level project readme
 ```
@@ -92,7 +92,7 @@ Provisioning is idempotent and requires no system install from the user.
 
 ## Root entry points
 
-- **`start.bat`** — Windows / NVIDIA CUDA launcher.
+- **`run.bat`** — Windows / NVIDIA CUDA launcher.
 - **`start.command`** — macOS / Apple Silicon (MPS) launcher.
 
 Both ensure runtimes exist, start the engine, start the PHP UI, and open the browser at

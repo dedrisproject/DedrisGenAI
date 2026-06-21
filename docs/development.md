@@ -22,7 +22,7 @@ cd engine
 
 ## Running the engine directly
 
-The launchers (`start.bat` / `start.command`) start the HTTP service `engine/server.py` for you. For
+The launchers (`run.bat` / `start.command`) start the HTTP service `engine/server.py` for you. For
 debugging you can also run the engine the legacy way:
 
 ```

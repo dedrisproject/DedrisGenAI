@@ -49,7 +49,7 @@ rem --- 2b) best-effort SHA256 verification ------------------------------------
 if not "%DEDRIS_PHP_SHA256%"=="" (
   for /f "usebackq delims=" %%H in (`powershell -NoProfile -Command "(Get-FileHash -Algorithm SHA256 '%ZIP_PATH%').Hash.ToLower()" 2^>nul`) do set "GOT_SHA=%%H"
   if /i not "!GOT_SHA!"=="%DEDRIS_PHP_SHA256%" (
-    echo [DedrisGenAI] WARN: PHP zip SHA256 mismatch (expected %DEDRIS_PHP_SHA256%, got !GOT_SHA!). 1>&2
+    echo [DedrisGenAI] WARN: PHP zip SHA256 mismatch ^(expected %DEDRIS_PHP_SHA256%, got !GOT_SHA!^). 1>&2
     echo [DedrisGenAI] WARN: continuing, but the download may be a different build/version. 1>&2
   ) else (
     echo [DedrisGenAI]   SHA256 verified.
@@ -69,7 +69,7 @@ rem --- 3b) enable required extensions via a portable php.ini ------------------
 rem The embeddable PHP zip ships php.ini-development/production but no active php.ini.
 rem Write a minimal php.ini that enables the extensions the PHP UI needs.
 if not exist "%PHP_DIR%\php.ini" (
-  >  "%PHP_DIR%\php.ini" echo ; DedrisGenAI portable PHP config (auto-generated)
+  >  "%PHP_DIR%\php.ini" echo ; DedrisGenAI portable PHP config ^(auto-generated^)
   >> "%PHP_DIR%\php.ini" echo extension_dir = "ext"
   >> "%PHP_DIR%\php.ini" echo extension=curl
   >> "%PHP_DIR%\php.ini" echo extension=mbstring
@@ -86,7 +86,7 @@ if not exist "%PHP_BIN%" (
 "%PHP_BIN%" --version >nul 2>&1
 if errorlevel 1 (
   echo [DedrisGenAI] ERROR: php.exe was extracted but does not run. 1>&2
-  echo [DedrisGenAI]   You may need the Visual C++ Redistributable (x64) from Microsoft. 1>&2
+  echo [DedrisGenAI]   You may need the Visual C++ Redistributable ^(x64^) from Microsoft. 1>&2
   endlocal & exit /b 1
 )
 

@@ -1,5 +1,7 @@
 @echo off
-rem start.bat - DedrisGenAI launcher for Windows (NVIDIA / CUDA).
+rem run.bat - DedrisGenAI launcher for Windows (NVIDIA / CUDA).
+rem (Named run.bat, not start.bat: "start" is a built-in cmd.exe command, so typing
+rem  "start.bat" in a terminal runs the built-in instead of this file.)
 rem
 rem Thin entry point. Loads the shared launcher logic, provisions the portable
 rem runtimes (PHP + Python/torch CUDA) on first run, starts the engine service and
@@ -37,11 +39,11 @@ if errorlevel 1 (echo [DedrisGenAI] ERROR: Python provisioning failed. & exit /b
 
 rem --- sanity: required app files in place -------------------------------------
 if not exist "%ENGINE_DIR%\server.py" (
-  echo [DedrisGenAI] ERROR: engine\server.py not found (engine not built yet?). 1>&2
+  echo [DedrisGenAI] ERROR: engine\server.py not found ^(engine not built yet?^). 1>&2
   exit /b 1
 )
 if not exist "%WEBUI_DIR%\public" (
-  echo [DedrisGenAI] ERROR: webui\public not found (UI not built yet?). 1>&2
+  echo [DedrisGenAI] ERROR: webui\public not found ^(UI not built yet?^). 1>&2
   exit /b 1
 )
 
@@ -94,7 +96,7 @@ if not errorlevel 1 (
   endlocal & exit /b 0
 )
 if %WP_WAITED% GEQ %WP_TIMEOUT% (
-  echo [DedrisGenAI] WARN: %WP_LABEL% did not open %WP_HOST%:%WP_PORT% within %WP_TIMEOUT%s (continuing). 1>&2
+  echo [DedrisGenAI] WARN: %WP_LABEL% did not open %WP_HOST%:%WP_PORT% within %WP_TIMEOUT%s ^(continuing^). 1>&2
   endlocal & exit /b 1
 )
 timeout /t 1 /nobreak >nul

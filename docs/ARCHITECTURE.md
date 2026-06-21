@@ -145,7 +145,7 @@ browser only talks to PHP, there are no CORS concerns and the engine is never ex
 
 ## Startup (launchers & runtimes)
 
-Both root entry points — `start.bat` (Windows/CUDA) and `start.command` (macOS/MPS) — do the same
+Both root entry points — `run.bat` (Windows/CUDA) and `start.command` (macOS/MPS) — do the same
 four things, with platform-specific runtime provisioning:
 
 1. **Ensure portable runtimes exist.** Provision portable PHP (`runtimes/php/<os>/`) and portable

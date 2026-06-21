@@ -96,7 +96,7 @@ This is a warning that you can ignore.
 
 ### Torch not compiled with CUDA enabled
 
-You are not following the official installation guide. Use the launcher (`start.bat` on Windows or `start.command` on macOS), which provisions the correct PyTorch build for you.
+You are not following the official installation guide. Use the launcher (`run.bat` on Windows or `start.command` on macOS), which provisions the correct PyTorch build for you.
 
 Please do not trust those wrong tutorials on the internet, and please only trust the official installation guide.
 
@@ -118,7 +118,7 @@ A very small amount of devices does have this problem. The cause can be complica
 
 1. Make sure that you are using the latest version of DedrisGenAI (run `git pull`).
 2. Upgrade your Nvidia driver to the latest version. (Usually the version of your Nvidia driver should be 53X, not 3XX or 4XX.)
-3. If things still do not work, then perhaps it is a problem with CUDA 12. You can try re-provisioning the portable runtime: delete the `runtimes/python/` folder, then run `start.bat` again so it reinstalls a clean PyTorch + CUDA environment. Please do NOT install any CUDA or other environment on your own.
+3. If things still do not work, then perhaps it is a problem with CUDA 12. You can try re-provisioning the portable runtime: delete the `runtimes/python/` folder, then run `run.bat` again so it reinstalls a clean PyTorch + CUDA environment. Please do NOT install any CUDA or other environment on your own.
 4. If it still does not work, please open an issue for us to take a look.
 
 ### Found no NVIDIA driver on your system

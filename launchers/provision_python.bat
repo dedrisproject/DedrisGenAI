@@ -15,11 +15,14 @@ if "%PYTHON_BIN%"=="" (
   endlocal & exit /b 1
 )
 
-rem --- 1) fast path: torch already importable ---------------------------------
+rem --- 1) fast path: fully provisioned (torch AND key engine deps importable) --
+rem Check more than torch: a half-finished install can leave torch present but the
+rem engine requirements (einops, cv2, ...) missing, which crashes server.py. Only
+rem skip provisioning when the whole environment is actually usable.
 if exist "%PYTHON_BIN%" (
-  "%PYTHON_BIN%" -c "import torch" >nul 2>&1
+  "%PYTHON_BIN%" -c "import torch, einops, cv2" >nul 2>&1
   if not errorlevel 1 (
-    echo [DedrisGenAI] Portable Python already provisioned (torch present).
+    echo [DedrisGenAI] Portable Python already provisioned ^(torch + engine deps present^).
     endlocal & exit /b 0
   )
 )
@@ -86,12 +89,12 @@ if errorlevel 1 echo [DedrisGenAI] WARN: pip self-upgrade failed (continuing). 1
 rem --- 4) install torch + torchvision (CUDA cu121) ----------------------------
 "%PYTHON_BIN%" -c "import torch" >nul 2>&1
 if errorlevel 1 (
-  echo [DedrisGenAI] Installing torch + torchvision (CUDA cu121 - this can take a while) ...
-  "%PYTHON_BIN%" -m pip install torch torchvision --extra-index-url %DEDRIS_TORCH_INDEX% --no-warn-script-location
+  echo [DedrisGenAI] Installing torch + torchvision ^(CUDA cu121 - this can take a while^) ...
+  "%PYTHON_BIN%" -m pip install torch torchvision --index-url %DEDRIS_TORCH_INDEX% --no-warn-script-location
   if errorlevel 1 (
-    echo [DedrisGenAI] ERROR: failed to install torch/torchvision (CUDA). 1>&2
+    echo [DedrisGenAI] ERROR: failed to install torch/torchvision ^(CUDA^). 1>&2
     echo [DedrisGenAI]   Retry, or run manually: 1>&2
-    echo [DedrisGenAI]     "%PYTHON_BIN%" -m pip install torch torchvision --extra-index-url %DEDRIS_TORCH_INDEX% 1>&2
+    echo [DedrisGenAI]     "%PYTHON_BIN%" -m pip install torch torchvision --index-url %DEDRIS_TORCH_INDEX% 1>&2
     endlocal & exit /b 1
   )
 )
@@ -108,7 +111,7 @@ if exist "%REQ%" (
     endlocal & exit /b 1
   )
 ) else (
-  echo [DedrisGenAI] WARN: engine\requirements_versions.txt not found at %REQ% (skipping). 1>&2
+  echo [DedrisGenAI] WARN: engine\requirements_versions.txt not found at %REQ% ^(skipping^). 1>&2
 )
 
 rem --- 6) verify --------------------------------------------------------------

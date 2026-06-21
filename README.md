@@ -62,8 +62,8 @@ services and opens your browser at `http://127.0.0.1:8888`.
 ### Windows (NVIDIA CUDA)
 
 1. Make sure you have a recent NVIDIA GPU and up-to-date drivers.
-2. Double-click **`start.bat`** in the project root.
-   - Or from a terminal: `start.bat`
+2. Double-click **`run.bat`** in the project root.
+   - Or from a terminal: `.\run.bat`
 3. Wait for the first-run provisioning to finish. Your browser opens to the app automatically.
 
 The Windows launcher installs the CUDA build of PyTorch and runs the engine on your GPU.
@@ -136,7 +136,7 @@ DedrisGenAI/
 ├─ runtimes/        # portable PHP + Python runtimes (provisioned on first run)
 ├─ launchers/       # shared bootstrap logic
 ├─ docs/            # documentation
-├─ start.bat        # entry point — Windows / NVIDIA CUDA
+├─ run.bat          # entry point — Windows / NVIDIA CUDA
 ├─ start.command    # entry point — macOS / MPS
 └─ README.md        # this file
 ```
@@ -150,7 +150,7 @@ capable machine:
 
 | Platform | GPU / Acceleration  | Notes |
 |----------|---------------------|-------|
-| Windows  | NVIDIA (CUDA)       | 4GB+ VRAM, recent drivers. Use `start.bat`. |
+| Windows  | NVIDIA (CUDA)       | 4GB+ VRAM, recent drivers. Use `run.bat`. |
 | macOS    | Apple Silicon (MPS) | M1/M2/M3+. Use `start.command`. Slower than a discrete NVIDIA GPU. |
 
 Plenty of free disk space is recommended — the portable Python runtime, PyTorch, and the default

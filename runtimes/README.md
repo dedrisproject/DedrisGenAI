@@ -9,7 +9,7 @@ repo and can be deleted by simply removing these directories.
 
 Launch the app from the repo root:
 
-- **Windows (NVIDIA / CUDA):** double-click `start.bat`
+- **Windows (NVIDIA / CUDA):** double-click `run.bat`
 - **macOS (Apple Silicon / MPS) or Linux:** double-click `start.command`
   (or run `./start.command` from a terminal)
 

@@ -1,3 +1,7 @@
 # Ensure that shell scripts always use lf line endings, e.g. entrypoint.sh for docker
 * text=auto
 *.sh text eol=lf
+*.command text eol=lf
+# Windows batch files MUST be CRLF; cmd.exe mis-parses LF-only .bat files.
+*.bat text eol=crlf
+*.cmd text eol=crlf
