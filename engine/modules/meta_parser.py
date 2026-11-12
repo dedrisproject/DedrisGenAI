@@ -3,7 +3,14 @@ import re
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-import gradio as gr
+try:
+    import gradio as gr
+except ImportError:
+    # Headless engine (server.py, e.g. on Colab/Python 3.13 where gradio 3.x can't
+    # be installed): only the legacy Gradio UI consumes these update dicts, so a
+    # stand-in with gradio 3's gr.update() shape is enough.
+    import types
+    gr = types.SimpleNamespace(update=lambda **kwargs: {'__type__': 'update', **kwargs})
 from PIL import Image
 
 import version
