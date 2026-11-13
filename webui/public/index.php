@@ -122,6 +122,7 @@ foreach (Lang::SUPPORTED as $code) {
   <div class="banner" id="banner" role="status" aria-live="polite">
     <span class="spinner" id="banner-spinner"></span>
     <span id="banner-text"></span>
+    <button type="button" class="btn sm banner-action" id="banner-action" hidden></button>
   </div>
 
   <!-- model-download bar: shown while a preset's model is downloading on first use.

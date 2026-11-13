@@ -28,9 +28,11 @@ fi
 # outputs: persist generated images in the volume.
 mklink outputs
 
-# Start the engine (binds 127.0.0.1:7866 internally) in the background.
+# Start the engine (binds 127.0.0.1:7866 internally) in the background, under the
+# supervisor (control API on 127.0.0.1:7867), which restarts it if it crashes or
+# hangs and lets the UI's "Restart engine" button relaunch it.
 cd "$ENGINE"
-DEDRIS_ENGINE_PORT="$ENGINE_PORT" python server.py &
+DEDRIS_ENGINE_PORT="$ENGINE_PORT" python supervisor.py &
 ENGINE_PID=$!
 
 # Wait until the engine answers /api/health (does NOT trigger the heavy model
@@ -41,7 +43,8 @@ for _ in $(seq 1 600); do
 		echo "[DedrisGenAI] engine ready."
 		break
 	fi
-	if ! kill -0 "$ENGINE_PID" 2>/dev/null; then
+	if ! kill -0 "$ENGINE_PID" 2>/dev/null || \
+		curl -fsS "http://127.0.0.1:${DEDRIS_SUPERVISOR_PORT:-7867}/status" 2>/dev/null | grep -q '"state": "failed"'; then
 		echo "[DedrisGenAI] engine process exited during startup." >&2
 		exit 1
 	fi
@@ -51,4 +54,6 @@ done
 # Serve the PHP web UI in the foreground (this is the exposed service on :8888).
 cd "$APP"
 echo "[DedrisGenAI] serving PHP UI on ${HOST}:${UI_PORT}"
+# Several PHP workers, so one slow proxied call (e.g. a hung engine) can't block the UI.
+export PHP_CLI_SERVER_WORKERS="${PHP_CLI_SERVER_WORKERS:-4}"
 exec php -S "${HOST}:${UI_PORT}" -t webui/public webui/public/router.php

@@ -54,12 +54,12 @@ export PYTORCH_ENABLE_MPS_FALLBACK=1
 if port_in_use "$DEDRIS_ENGINE_PORT"; then
   warn "Something is already listening on engine port $DEDRIS_ENGINE_PORT — reusing it."
 else
-  info "Starting engine: $PYTHON_BIN server.py  (CWD=$ENGINE_DIR, port $DEDRIS_ENGINE_PORT)"
+  info "Starting engine: $PYTHON_BIN supervisor.py  (CWD=$ENGINE_DIR, port $DEDRIS_ENGINE_PORT; auto-restarts on crash)"
   (
     cd "$ENGINE_DIR" || exit 1
     DEDRIS_ENGINE_PORT="$DEDRIS_ENGINE_PORT" \
     PYTORCH_ENABLE_MPS_FALLBACK=1 \
-    exec "$PYTHON_BIN" server.py
+    exec "$PYTHON_BIN" supervisor.py
   ) &
   track_pid "$!"
   info "Engine starting (PID $!). First run loads models — this can take a minute ..."
@@ -73,6 +73,8 @@ if port_in_use "$DEDRIS_UI_PORT"; then
   warn "Something is already listening on UI port $DEDRIS_UI_PORT — reusing it."
 else
   info "Starting PHP UI: php -S $DEDRIS_HOST:$DEDRIS_UI_PORT -t $PHP_DOCROOT"
+  # Several PHP workers, so one slow proxied call (e.g. a hung engine) can't block the UI.
+  export PHP_CLI_SERVER_WORKERS="${PHP_CLI_SERVER_WORKERS:-4}"
   if [ -f "$PHP_ROUTER" ]; then
     DEDRIS_ENGINE_PORT="$DEDRIS_ENGINE_PORT" DEDRIS_UI_PORT="$DEDRIS_UI_PORT" \
       "$PHP_BIN" -S "$DEDRIS_HOST:$DEDRIS_UI_PORT" -t "$PHP_DOCROOT" "$PHP_ROUTER" &

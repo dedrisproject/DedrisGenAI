@@ -22,7 +22,8 @@ public URL.
 1. Clones the repository into `/content/DedrisGenAI`.
 2. Installs the **PHP CLI** (Colab does not ship PHP) and the **CUDA build of PyTorch** plus the
    engine's Python requirements.
-3. Starts the **engine** (`engine/server.py`, CWD = `engine/`) on `127.0.0.1:7866` and waits for
+3. Starts the **engine** (`engine/server.py`, CWD = `engine/`) on `127.0.0.1:7866` through
+   `engine/supervisor.py`, which restarts it automatically if it crashes or hangs, and waits for
    `/api/health`.
 4. Starts the **PHP web UI** on `127.0.0.1:8888` (`php -S ... webui/public/router.php`).
 5. Exposes the UI through Colab's port proxy and prints a clickable link. A cloudflared tunnel
@@ -77,6 +78,24 @@ Some browsers, extensions, or corporate networks block Colab's `proxyPort` links
 **cloudflared tunnel fallback** cell instead — it downloads `cloudflared` and opens a temporary
 public `https://<random>.trycloudflare.com` URL to the UI. Treat that URL as public for the life of
 the session.
+
+### "Lost contact with the engine" during a generation
+
+The engine process died or stopped responding. On free Colab the usual cause is **running out of
+system RAM** (≈12.7 GB): Linux kills the process instantly, with no error in the log. The
+supervisor restarts the engine on its own and the UI explains what happened (for an out-of-memory
+kill it says so explicitly); if the engine is hung or keeps crashing, use the **Restart engine**
+button in the banner. The generation that was running is lost — press Generate again. Check what
+happened from the notebook with:
+
+```python
+engine_status()          # state, restarts, last_exit_reason, oom_suspected
+!tail -n 80 /content/dedris_engine.log
+!free -h
+```
+
+If it keeps running out of memory, generate fewer images per run, use a lower resolution, or avoid
+switching between many models/LoRAs in one session.
 
 ### UI loads but generation fails / "engine unreachable"
 

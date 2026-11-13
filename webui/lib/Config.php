@@ -22,6 +22,9 @@ final class Config
     /** Default port for the Python engine HTTP service. */
     public const DEFAULT_ENGINE_PORT = 7866;
 
+    /** Default port for the engine supervisor's control API (engine/supervisor.py). */
+    public const DEFAULT_SUPERVISOR_PORT = 7867;
+
     /** The engine is reached over loopback only. */
     public const ENGINE_HOST = '127.0.0.1';
 
@@ -39,6 +42,32 @@ final class Config
     public static function enginePort(): int
     {
         return self::readPort('DEDRIS_ENGINE_PORT', self::DEFAULT_ENGINE_PORT);
+    }
+
+    /**
+     * Port of the engine supervisor control API. Reads DEDRIS_SUPERVISOR_PORT, falling back to 7867.
+     */
+    public static function supervisorPort(): int
+    {
+        return self::readPort('DEDRIS_SUPERVISOR_PORT', self::DEFAULT_SUPERVISOR_PORT);
+    }
+
+    /**
+     * Base URL of the supervisor control API, e.g. "http://127.0.0.1:7867".
+     */
+    public static function supervisorBaseUrl(): string
+    {
+        return sprintf('http://%s:%d', self::ENGINE_HOST, self::supervisorPort());
+    }
+
+    /**
+     * Whether the UI may ask the supervisor to restart the engine.
+     * DEDRIS_ALLOW_ENGINE_RESTART=0 disables the restart button/endpoint.
+     */
+    public static function engineRestartAllowed(): bool
+    {
+        $raw = getenv('DEDRIS_ALLOW_ENGINE_RESTART');
+        return !($raw !== false && in_array(strtolower(trim($raw)), ['0', 'false', 'no', 'off'], true));
     }
 
     /**

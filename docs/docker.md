@@ -60,6 +60,9 @@ use. The volume persists across container restarts.
 |---|---|---|
 | `DEDRIS_UI_PORT` | `8888` | Port the PHP UI listens on (exposed). |
 | `DEDRIS_ENGINE_PORT` | `7866` | Internal engine port (not exposed). |
+| `DEDRIS_SUPERVISOR_PORT` | `7867` | Internal engine-supervisor control port (not exposed). |
+| `DEDRIS_WATCHDOG_SECS` | `180` | Restart the engine if it stops answering for this long (`0` = off). |
+| `DEDRIS_ALLOW_ENGINE_RESTART` | `1` | Set `0` to hide the UI's **Restart engine** button. |
 | `DEDRIS_HOST` | `0.0.0.0` | Bind address for the PHP UI. |
 | `DATADIR` | `/content/data` | Persistent volume location (models + outputs). |
 

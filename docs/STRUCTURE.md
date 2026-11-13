@@ -12,7 +12,8 @@ DedrisGenAI/
 │  ├─ sdxl_styles/         # style json files
 │  ├─ wildcards/  language/  css/  javascript/  tests/  models/  docker/
 │  ├─ args_manager.py  launch.py  webui.py (legacy gradio)  version.py  ...
-│  └─ server.py            # HTTP API service that the PHP UI calls
+│  ├─ server.py            # HTTP API service that the PHP UI calls
+│  └─ supervisor.py        # runs server.py, restarts it on crash/hang, restart API for the UI
 ├─ webui/                  # PHP web UI (replaces the old Gradio UI)
 │  ├─ public/              # document root served by PHP: index.php + assets/
 │  │  ├─ index.php
@@ -41,8 +42,10 @@ kept under `runtimes/`, and the launchers in the project root wire everything to
 The engine is the Python + PyTorch image generation backend. It always runs with its working
 directory set to `engine/`.
 
-- **`server.py`** — the HTTP API service the PHP UI calls. This is the new entry point used by the
-  launchers.
+- **`server.py`** — the HTTP API service the PHP UI calls.
+- **`supervisor.py`** — the entry point used by the launchers, Docker and Colab: runs `server.py`
+  as a child process, restarts it if it crashes or stops responding, and exposes a small loopback
+  control API (`/status`, `/restart`) used by the UI's **Restart engine** button.
 - **`launch.py`** — the legacy entry point, kept for debugging. It sets `root = dir(__file__)`,
   `os.chdir(root)`, and `sys.path.append(root)`, so all relative paths resolve inside `engine/`.
 - **`webui.py`** — the legacy Gradio UI; kept as a behavior reference, not used in production.

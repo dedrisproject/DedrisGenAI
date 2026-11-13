@@ -48,9 +48,9 @@ if not exist "%WEBUI_DIR%\public" (
 )
 
 rem --- 2) start the engine service (CWD = engine\) -----------------------------
-echo [DedrisGenAI] Starting engine: python server.py  (CWD=%ENGINE_DIR%, port %DEDRIS_ENGINE_PORT%)
+echo [DedrisGenAI] Starting engine: python supervisor.py  (CWD=%ENGINE_DIR%, port %DEDRIS_ENGINE_PORT%; auto-restarts on crash)
 echo [DedrisGenAI] First run loads models - this can take a minute ...
-start "DedrisGenAI Engine" /D "%ENGINE_DIR%" "%PYTHON_BIN%" server.py
+start "DedrisGenAI Engine" /D "%ENGINE_DIR%" "%PYTHON_BIN%" supervisor.py
 
 rem give the engine a head start before launching the UI / browser
 call :wait_port %DEDRIS_HOST% %DEDRIS_ENGINE_PORT% 180 Engine

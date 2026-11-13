@@ -138,6 +138,8 @@ a.icon-btn.nav-demo:hover { color: var(--text); }
 .banner.info  { background: #18233a; color: #cfe0ff; }
 .banner.warn  { background: #2a2410; color: #ffe7ad; }
 .banner.error { background: #2c1717; color: #ffc9c9; }
+.banner .banner-action { margin-left: auto; flex: none; white-space: nowrap; }
+.banner .banner-action[hidden] { display: none; }
 .banner .spinner {
   width: 14px; height: 14px; border-radius: 50%;
   border: 2px solid rgba(255,255,255,.25); border-top-color: #fff;

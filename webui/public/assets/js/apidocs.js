@@ -161,6 +161,15 @@
           method: 'GET', path: '/api/lora_status',
           desc: 'State of the current “add LoRA from URL” download. Returns { state, message, file, downloaded_bytes, total_bytes, lora_name }.',
         },
+        {
+          method: 'GET', path: '/api/engine',
+          desc: 'Engine supervisor status: { supervised, state: starting|running|unresponsive|restarting|backoff|failed|stopped, pid, restarts, last_exit_reason, oom_suspected, restart_allowed, … }. { supervised:false } when the engine runs without supervisor.py.',
+        },
+        {
+          method: 'POST', path: '/api/engine', mutating: true,
+          desc: 'Restart the engine process (any running generation is lost). Needs the supervisor; disabled with DEDRIS_ALLOW_ENGINE_RESTART=0.',
+          body: { action: 'restart' },
+        },
       ],
     },
     {

@@ -15,4 +15,5 @@ require __DIR__ . '/_bootstrap.php';
 
 require_method(['GET']);
 
-forward(engine()->get('/api/health'));
+// Short timeout: health is trivial, a slow answer means the engine is hung.
+forward((new EngineClient(5, 10))->get('/api/health'));

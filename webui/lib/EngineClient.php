@@ -22,10 +22,26 @@ final class EngineClient
     /** Total request timeout in seconds (generation kicks off fast; long work is polled). */
     private int $timeout;
 
-    public function __construct(int $connectTimeout = 5, int $timeout = 120)
+    /** Base URL to talk to (null = the engine). Lets the same client reach the supervisor. */
+    private ?string $baseUrl;
+
+    public function __construct(int $connectTimeout = 5, int $timeout = 120, ?string $baseUrl = null)
     {
         $this->connectTimeout = $connectTimeout;
         $this->timeout = $timeout;
+        $this->baseUrl = $baseUrl;
+    }
+
+    /** Full URL for $path on this client's target (engine by default). */
+    private function url(string $path): string
+    {
+        if ($this->baseUrl === null) {
+            return Config::engineUrl($path);
+        }
+        if ($path === '' || $path[0] !== '/') {
+            $path = '/' . $path;
+        }
+        return rtrim($this->baseUrl, '/') . $path;
     }
 
     /**
@@ -36,7 +52,7 @@ final class EngineClient
      */
     public function get(string $path, array $query = []): EngineResponse
     {
-        $url = Config::engineUrl($path);
+        $url = $this->url($path);
         if ($query !== []) {
             $url .= (strpos($path, '?') === false ? '?' : '&') . http_build_query($query);
         }
@@ -51,7 +67,7 @@ final class EngineClient
      */
     public function post(string $path, array $jsonArray = []): EngineResponse
     {
-        $url = Config::engineUrl($path);
+        $url = $this->url($path);
         $body = json_encode($jsonArray, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         if ($body === false) {
             $body = '{}';
@@ -77,7 +93,7 @@ final class EngineClient
      */
     public function postRaw(string $path, string $rawBody, string $contentType = 'application/json'): EngineResponse
     {
-        $url = Config::engineUrl($path);
+        $url = $this->url($path);
 
         return $this->request(
             'POST',
@@ -101,7 +117,7 @@ final class EngineClient
      */
     public function stream(string $path, array $query = []): bool
     {
-        $url = Config::engineUrl($path);
+        $url = $this->url($path);
         if ($query !== []) {
             $url .= (strpos($path, '?') === false ? '?' : '&') . http_build_query($query);
         }

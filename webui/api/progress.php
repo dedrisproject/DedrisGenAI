@@ -23,4 +23,7 @@ if ($taskId === '') {
     json_error(400, 'missing_task_id');
 }
 
-forward(engine()->get('/api/progress', ['task_id' => $taskId]));
+// Short timeout: progress answers instantly when the engine is healthy, so a slow
+// reply means it is hung — fail fast so the UI can say so (and offer a restart)
+// instead of waiting for the generic 120s proxy timeout.
+forward((new EngineClient(5, 15))->get('/api/progress', ['task_id' => $taskId]));

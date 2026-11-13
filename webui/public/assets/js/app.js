@@ -167,7 +167,7 @@
     // engine pill + selected-state messages, if idle
     if (!state.generating) refreshEnginePill();
     // if a banner is showing one of our keyed messages, re-render it
-    if (state.bannerKey) showBanner(state.bannerKind, t(state.bannerKey, state.bannerVars), state.bannerSpin);
+    if (state.bannerKey) showBanner(state.bannerKind, t(state.bannerKey, state.bannerVars), state.bannerSpin, state.bannerAction);
     // progress message if idle/holding a keyed message
     if (state.progressKey) {
       $('#progress-msg').textContent = t(state.progressKey, state.progressVars);
@@ -267,7 +267,12 @@
     sawProgress: false,
     firstRunDone: false,   // becomes true after the first successful generation
     // i18n-aware message bookkeeping (so language switches re-render live text)
-    bannerKey: null, bannerVars: null, bannerKind: 'info', bannerSpin: false,
+    bannerKey: null, bannerVars: null, bannerKind: 'info', bannerSpin: false, bannerAction: null,
+    // engine-trouble bookkeeping (supervisor-backed restart)
+    lostSince: 0,          // first failed progress poll of the current outage (0 = in contact)
+    healthDownSince: 0,    // first failed idle health check of the current outage
+    supCheckedAt: 0,       // last time we asked the supervisor for its status
+    restarting: false,     // a UI-requested engine restart is in progress
     progressKey: null, progressVars: null,
     enginePillKey: null, enginePillVars: null,
     // model-download bookkeeping (Feature 1): true while a preset's model is
@@ -292,6 +297,10 @@
   const elBanner = $('#banner');
   const elBannerText = $('#banner-text');
   const elBannerSpin = $('#banner-spinner');
+  const elBannerAction = $('#banner-action');
+  if (elBannerAction) elBannerAction.addEventListener('click', () => {
+    if (state.bannerAction && typeof state.bannerAction.run === 'function') state.bannerAction.run();
+  });
 
   // Set the engine status pill. `key` is an i18n key; `vars` are optional
   // interpolation vars (used by the device-aware ready messages, which carry a
@@ -323,16 +332,132 @@
     return null;   // unknown device -> fall back to the plain ready message
   }
   /** Show a banner from an i18n key (re-rendered on language change). */
-  function showBannerKey(kind, key, vars, spinning) {
+  // `action` (optional): { key: '<i18n label key>', run: () => {} } renders a
+  // button at the end of the banner (e.g. "Restart engine").
+  function showBannerKey(kind, key, vars, spinning, action) {
     state.bannerKey = key; state.bannerVars = vars || null; state.bannerKind = kind; state.bannerSpin = !!spinning;
-    showBanner(kind, t(key, vars), spinning);
+    state.bannerAction = action || null;
+    showBanner(kind, t(key, vars), spinning, state.bannerAction);
   }
-  function showBanner(kind, text, spinning) {
+  function showBanner(kind, text, spinning, action) {
     elBanner.className = 'banner show ' + kind;
     elBannerText.textContent = text;
     elBannerSpin.style.display = spinning ? '' : 'none';
+    if (elBannerAction) {
+      if (action) {
+        elBannerAction.textContent = t(action.key);
+        elBannerAction.disabled = !!state.restarting;
+        elBannerAction.hidden = false;
+      } else {
+        elBannerAction.hidden = true;
+      }
+    }
   }
-  function hideBanner() { elBanner.className = 'banner'; state.bannerKey = null; }
+  function hideBanner() {
+    elBanner.className = 'banner'; state.bannerKey = null; state.bannerAction = null;
+    if (elBannerAction) elBannerAction.hidden = true;
+  }
+
+  // ---------------------------------------------------------------- engine supervisor / restart
+  // When the engine is launched through engine/supervisor.py, GET /api/engine
+  // reports why it is down (crashed / restarting / hung) and POST /api/engine
+  // {action:'restart'} kills and relaunches it. Without the supervisor the
+  // endpoint answers {supervised:false} and no restart button is offered.
+  const LOST_GRACE_MS = 20000;   // tolerate short hiccups before escalating
+  const RESTART_ACTION = { key: 'action.engine.restart', run: () => restartEngine() };
+
+  async function fetchSupervisor() {
+    try { return await apiGet('engine'); } catch (_) { return null; }
+  }
+
+  // Show the most helpful banner for an engine outage that started `downMs` ago.
+  // Throttled: asks the supervisor at most every 4s.
+  async function reportEngineTrouble(downMs, idle = false) {
+    if (state.restarting) return;
+    const now = Date.now();
+    if (now - state.supCheckedAt < 4000) return;
+    state.supCheckedAt = now;
+    const sup = await fetchSupervisor();
+    if (state.restarting) return;   // a restart started while we were waiting
+    const secs = Math.round(downMs / 1000);
+    const action = sup && sup.restart_allowed ? RESTART_ACTION : null;
+    const st = sup && sup.supervised ? sup.state : null;
+    const reason = (sup && sup.last_exit_reason) || '?';
+    const crashed = sup && sup.last_exit_kind === 'crash'
+      && sup.last_exit_ago != null && sup.last_exit_ago < 1800;
+
+    if (st === 'starting' || st === 'backoff' || st === 'restarting') {
+      setEngine('starting', 'engine.restarting', null);
+      if (crashed && sup.oom_suspected) showBannerKey('warn', 'banner.engine.crashed.oom', null, true);
+      else if (crashed) showBannerKey('warn', 'banner.engine.crashed.restarting', { reason }, true);
+      else showBannerKey('info', 'banner.engine.restarting', null, true);
+      return;
+    }
+    if (st === 'failed') {
+      setEngine('offline', 'engine.offline', null);
+      showBannerKey('error', 'banner.engine.failed', { reason }, false, action);
+      return;
+    }
+    if (downMs < LOST_GRACE_MS) {
+      // Idle: keep the regular "engine starting/unreachable" banner for now.
+      if (!idle) showBannerKey('warn', 'banner.contact.lost', null, true);
+      return;
+    }
+    if (st === 'unresponsive') {
+      setEngine('offline', 'engine.offline', null);
+      showBannerKey('error', 'banner.engine.unresponsive', { secs }, false, action);
+    } else if (st) {
+      // Supervisor says the engine is alive, yet our calls fail.
+      showBannerKey('warn', 'banner.contact.lost.long', { secs }, true, action);
+    } else {
+      setEngine('offline', 'engine.offline', null);
+      showBannerKey('error', 'banner.engine.down.manual', { secs }, false);
+    }
+  }
+
+  async function restartEngine() {
+    if (state.restarting) return;
+    if (state.generating && !window.confirm(t('confirm.engine.restart'))) return;
+    state.restarting = true;
+    setEngine('starting', 'engine.restarting', null);
+    showBannerKey('info', 'banner.engine.restarting', null, true);
+    try {
+      await apiPost('engine', { action: 'restart' });
+    } catch (e) {
+      state.restarting = false;
+      showBannerKey('error', 'banner.engine.restart.failed', { msg: e.message }, false, RESTART_ACTION);
+      return;
+    }
+    // The running generation (if any) dies with the old process.
+    if (state.generating) {
+      finishGenerating();
+      setIndeterminate(false);
+      state.progressKey = 'progress.engine_restarted'; state.progressVars = null;
+      elProgMsg.textContent = t('progress.engine_restarted');
+    }
+    state.lostSince = 0;
+    // Wait for the new engine to answer /api/health (first start may load models).
+    const t0 = Date.now();
+    await sleep(3000);
+    while (Date.now() - t0 < 30 * 60 * 1000) {
+      try { await apiGet('health'); break; } catch (_) { /* still starting */ }
+      const sup = await fetchSupervisor();
+      if (sup && sup.state === 'failed') {
+        state.restarting = false;
+        setEngine('offline', 'engine.offline', null);
+        showBannerKey('error', 'banner.engine.failed', { reason: sup.last_exit_reason || '?' }, false, RESTART_ACTION);
+        return;
+      }
+      await sleep(3000);
+    }
+    state.restarting = false;
+    state.healthDownSince = 0;
+    if (await checkHealth(false)) {
+      showBannerKey('info', 'banner.engine.restarted', null, false);
+      setTimeout(() => { if (state.bannerKey === 'banner.engine.restarted') hideBanner(); }, 8000);
+      try { applyOptions(await apiGet('options')); } catch (_) { /* keep current options */ }
+    }
+  }
 
   // ---------------------------------------------------------------- model download (Feature 1)
   // On preset selection we ask the engine to ensure that preset's model is
@@ -1512,13 +1637,20 @@
       try {
         data = await apiGet('progress?task_id=' + encodeURIComponent(state.taskId));
       } catch (e) {
+        if (!state.polling || !state.taskId) break;   // e.g. finished by a restart meanwhile
+        if (!state.lostSince) state.lostSince = Date.now();
         setIndeterminate(true);
         state.progressKey = 'progress.lost'; elProgMsg.textContent = t('progress.lost');
-        showBannerKey('warn', 'banner.contact.lost', null, true);
+        await reportEngineTrouble(Date.now() - state.lostSince);
         await sleep(1200);
         continue;
       }
-      hideBanner();
+      if (state.lostSince) {
+        // Back in contact: refresh the engine pill (it may say "restarting").
+        state.lostSince = 0; state.supCheckedAt = 0;
+        await checkHealth(false, true);
+      }
+      if (!state.restarting) hideBanner();
       const st = data.state || data.status;
       renderProgress(data);
       if (data.preview) setPreview(data.preview);
@@ -1556,6 +1688,8 @@
       if (st === 'unknown') {
         // The engine no longer knows this task (e.g. it was restarted). Stop quietly.
         setIndeterminate(false);
+        state.progressKey = 'progress.engine_restarted'; state.progressVars = null;
+        elProgMsg.textContent = t('progress.engine_restarted');
         showBannerKey('warn', 'banner.task.lost', null, false);
         finishGenerating();
         return;
@@ -2631,24 +2765,34 @@
   }
 
   // ---------------------------------------------------------------- health watch
-  async function checkHealth(first = false) {
+  // keepBanner: refresh the pill only, leave whatever banner is showing.
+  async function checkHealth(first = false, keepBanner = false) {
     try {
       const h = await apiGet('health');
+      state.healthDownSince = 0;
       // Device-aware ready text: "NVIDIA CUDA: Engine Ready", "Apple Metal: …",
       // "CPU: …". Unknown/absent device -> the plain "Engine Ready" message.
       const devKey = engineReadyKey(h && h.device);
       if (devKey) setEngine('online', devKey, { ready: t('engine.ready') });
       else setEngine('online', 'engine.ready', null);
       if (h && h.version) $('#foot-version').textContent = 'v' + h.version;
-      hideBanner();
+      if (!keepBanner) hideBanner();
       return true;
     } catch (e) {
+      if (state.restarting) return false;   // restartEngine() owns the banner
       if (e.status && e.status >= 500 || e.status === 503) {
         setEngine('starting', 'engine.starting', null);
         showBannerKey('info', 'banner.engine.starting', null, true);
       } else {
         setEngine('offline', 'engine.offline', null);
         if (first) showBannerKey('error', 'banner.engine.unreachable', null, false);
+      }
+      // Was up before (not the first check): ask the supervisor what happened so
+      // a crashed/hung engine gets a clear message and a restart button.
+      if (!first) {
+        if (!state.healthDownSince) state.healthDownSince = Date.now();
+        state.supCheckedAt = 0;
+        await reportEngineTrouble(Date.now() - state.healthDownSince, true);
       }
       return false;
     }
@@ -2711,7 +2855,7 @@
     refreshEstimate();
 
     // keep an eye on the engine; back off polling after it is up
-    setInterval(() => { if (!state.generating) checkHealth(false); }, 15000);
+    setInterval(() => { if (!state.generating && !state.restarting) checkHealth(false); }, 15000);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

@@ -22,7 +22,9 @@ cd engine
 
 ## Running the engine directly
 
-The launchers (`run.bat` / `start.command`) start the HTTP service `engine/server.py` for you. For
+The launchers (`run.bat` / `start.command`) start the HTTP service `engine/server.py` for you, through
+`engine/supervisor.py` (which restarts it on crash/hang). `python server.py` from `engine/` also
+works on its own — the UI then simply has no **Restart engine** button. For
 debugging you can also run the engine the legacy way:
 
 ```

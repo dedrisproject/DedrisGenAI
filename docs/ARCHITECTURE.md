@@ -40,10 +40,32 @@ Step by step:
 |-------------|---------------------|-----------------------|
 | PHP UI      | `127.0.0.1:8888`    | `DEDRIS_UI_PORT`      |
 | Python engine | `127.0.0.1:7866`  | `DEDRIS_ENGINE_PORT`  |
+| Engine supervisor (control API) | `127.0.0.1:7867` | `DEDRIS_SUPERVISOR_PORT` |
 
 The PHP UI needs to know the engine port too (it proxies to it), so it reads both
 `DEDRIS_UI_PORT` and `DEDRIS_ENGINE_PORT` from the environment. A small `webui/lib/Config.php` exposes
 these with the defaults above.
+
+## Engine supervisor (`engine/supervisor.py`)
+
+The launchers, Docker and the Colab notebook do not run `server.py` directly: they run
+`supervisor.py`, which starts `server.py` as a child process and keeps it alive.
+
+* **Crash restart.** If the engine exits on its own (e.g. the OS kills it for running out of RAM,
+  exit code `-9`, which leaves no traceback in the log) it is relaunched after a short backoff.
+  After 3 rapid crashes in a row auto-restart pauses (state `failed`); a manual restart is still
+  possible.
+* **Hang watchdog.** Once the engine has been healthy, if `/api/health` then fails for
+  `DEDRIS_WATCHDOG_SECS` seconds (default `180`, `0` disables) the process is killed and relaunched.
+* **Control API** on loopback only: `GET /status` (`state`, `pid`, `restarts`, `last_exit_reason`,
+  `oom_suspected`, ...) and `POST /restart`.
+
+The PHP UI reaches it through `GET/POST /api/engine` (`webui/api/engine.php`). When the UI loses
+contact with the engine it asks for the supervisor status to explain what happened (crash, out of
+memory, hung) and offers a **Restart engine** button. A generation running when the engine dies is
+lost; the UI says so and the user can press Generate again. Set `DEDRIS_ALLOW_ENGINE_RESTART=0` to
+disable the button (the automatic restarts still happen). If the engine was started without the
+supervisor (`python server.py` by hand) the UI still works, just without the restart button.
 
 ## Engine HTTP API (`engine/server.py`)
 
@@ -128,6 +150,8 @@ The PHP layer mirrors the engine 1:1:
 health.php   options.php   preset.php   generate.php   progress.php   stop.php   (+ image passthrough)
 ```
 
+`engine.php` is the exception: it talks to the engine *supervisor* (see above), not the engine.
+
 Each reads JSON from the incoming request, forwards it to
 `http://127.0.0.1:<DEDRIS_ENGINE_PORT>/api/...`, and returns the engine's JSON unchanged. Because the
 browser only talks to PHP, there are no CORS concerns and the engine is never exposed directly.
@@ -151,8 +175,9 @@ four things, with platform-specific runtime provisioning:
 1. **Ensure portable runtimes exist.** Provision portable PHP (`runtimes/php/<os>/`) and portable
    Python + PyTorch (`runtimes/python/<os>/`) if missing. Windows installs the CUDA torch build;
    macOS uses CPU/MPS wheels and sets `PYTORCH_ENABLE_MPS_FALLBACK=1`. Provisioning is idempotent.
-2. **Start the engine** with the portable Python running `engine/server.py` (working directory =
-   `engine/`), on `DEDRIS_ENGINE_PORT`.
+2. **Start the engine** with the portable Python running `engine/supervisor.py` (working directory =
+   `engine/`), which launches `engine/server.py` on `DEDRIS_ENGINE_PORT` and restarts it if it
+   crashes or hangs.
 3. **Start the PHP UI** with portable PHP serving `webui/public/` on `DEDRIS_UI_PORT`.
 4. **Open the browser** at `http://127.0.0.1:8888`.
 
